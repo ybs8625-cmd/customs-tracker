@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Customs Tracker · 통관 진행조회</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="shell">
+    <header class="top">
+      <div>
+        <p class="brand">Customs Tracker</p>
+        <h1>통관 진행상태</h1>
+        <p class="sub">유니패스 HBL/송장번호로 단계·예상 수령일을 확인합니다.</p>
+      </div>
+      <div class="key-pill {% if has_key %}ok{% else %}warn{% endif %}" id="keyPill">
+        {% if has_key %}API 키 연결됨{% else %}API 키 필요{% endif %}
+      </div>
+    </header>
+
+    <section class="search-panel" aria-label="조회">
+      <form id="trackForm">
+        <label class="field">
+          <span>HBL / 송장번호</span>
+          <input id="hblInput" name="hbl" type="text" inputmode="numeric" autocomplete="off" placeholder="예: 509799520393" required />
+        </label>
+        <label class="field year">
+          <span>연도</span>
+          <input id="yearInput" name="year" type="number" min="2018" max="2100" />
+        </label>
+        <button type="submit" id="submitBtn">조회</button>
+      </form>
+      <p class="hint" id="hint">
+        {% if not has_key %}
+        `.env`에 `UNIPASS_API_KEY`를 넣어야 실시간 조회됩니다. 유니패스 → My메뉴 → OpenAPI에서 <strong>화물통관진행정보</strong> 신청.
+        {% else %}
+        최근 조회한 번호는 이 브라우저에 저장됩니다.
+        {% endif %}
+      </p>
+      <div class="chips" id="recentChips"></div>
+    </section>
+
+    <section id="statusArea" class="status-area hidden" aria-live="polite">
+      <div class="status-hero">
+        <div>
+          <p class="label">현재 단계</p>
+          <h2 id="currentStatus">-</h2>
+          <p class="meta" id="productLine"></p>
+        </div>
+        <div class="eta-box">
+          <p class="label">예상 CJ 수령</p>
+          <p class="eta-date" id="etaReceive">-</p>
+          <p class="eta-note" id="etaNote"></p>
+        </div>
+      </div>
+
+      <div class="timeline" id="timeline"></div>
+
+      <div class="grid">
+        <div class="info">
+          <h3>화물 정보</h3>
+          <dl id="infoList"></dl>
+        </div>
+        <div class="info">
+          <h3>처리 이력</h3>
+          <ul class="events" id="eventList"></ul>
+        </div>
+      </div>
+      <p class="hint" id="demoNote" hidden></p>
+    </section>
+
+    <section id="errorArea" class="error-area hidden"></section>
+  </main>
+
+  <script>
+    window.__HAS_KEY__ = {{ "true" if has_key else "false" }};
+  </script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
