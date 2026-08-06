@@ -9,10 +9,10 @@ const pageSub = document.getElementById("pageSub");
 function formatProcessedAt(raw) {
   const text = String(raw || "").trim();
   if (text.length >= 14 && /^\d{14}/.test(text)) {
-    return `${text.slice(2, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)} ${text.slice(8, 10)}:${text.slice(10, 12)}:${text.slice(12, 14)}`;
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)} ${text.slice(8, 10)}:${text.slice(10, 12)}:${text.slice(12, 14)}`;
   }
   if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
-    return text.length >= 19 ? `${text.slice(2, 19)}` : text.slice(2);
+    return text.length >= 19 ? text.slice(0, 19) : text;
   }
   return text;
 }

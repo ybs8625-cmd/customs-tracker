@@ -66,15 +66,15 @@ PUBLIC_PAGE_URL = os.getenv(
 
 
 def format_processed_at(raw: str) -> str:
-    """Unipass/CJ datetime -> yy-MM-dd HH:mm:ss."""
+    """Unipass/CJ datetime -> yyyy-MM-dd HH:mm:ss."""
     text = (raw or "").strip()
     if len(text) >= 14 and text[:14].isdigit():
         return (
-            f"{text[2:4]}-{text[4:6]}-{text[6:8]} "
+            f"{text[0:4]}-{text[4:6]}-{text[6:8]} "
             f"{text[8:10]}:{text[10:12]}:{text[12:14]}"
         )
     if len(text) >= 19 and text[4] == "-" and text[10] == " ":
-        return f"{text[2:4]}-{text[5:7]}-{text[8:10]} {text[11:19]}"
+        return text[:19]
     return text or "-"
 
 

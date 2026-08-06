@@ -61,44 +61,44 @@
       ]
     },
     "domestic": {
-      "invoice": "699321406113",
-      "status": "배송완료",
-      "processed_at": "2026-07-28 20:07:06",
-      "location": "서울구로우영",
-      "fingerprint": "699321406113|배송완료|2026-07-28 20:07:06|배송완료|2026-07-28 20:07:06",
+      "invoice": "509799520393",
+      "status": "배송준비",
+      "processed_at": "",
+      "location": "",
+      "fingerprint": "509799520393|배송준비||",
       "found": true,
-      "error": "",
-      "current_stage_index": 4,
+      "error": "운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
+      "current_stage_index": 0,
       "stages": [
         {
           "name": "배송준비",
-          "state": "done",
+          "state": "current",
           "processed_at": "",
           "location": ""
         },
         {
           "name": "집화",
-          "state": "done",
-          "processed_at": "2026-07-27 16:33:45",
-          "location": "인천구월랜드마크"
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
         },
         {
           "name": "이동중",
-          "state": "done",
-          "processed_at": "2026-07-27 17:24:40",
-          "location": "남동A"
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
         },
         {
           "name": "배송중",
-          "state": "done",
-          "processed_at": "2026-07-28 15:38:41",
-          "location": "서울구로우영"
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
         },
         {
           "name": "배송완료",
-          "state": "current",
-          "processed_at": "2026-07-28 20:07:06",
-          "location": "서울구로우영"
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
         }
       ]
     },
@@ -157,6 +157,6 @@
         "warehouse": ""
       }
     ],
-    "updated_at": "2026-08-06T02:18:50.841036+00:00"
+    "updated_at": "2026-08-06T02:21:32.873329+00:00"
   }
 }
