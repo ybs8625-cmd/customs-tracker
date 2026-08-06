@@ -2,9 +2,16 @@ name: customs-track-notify
 
 on:
   schedule:
-    # 매 10분 (UTC 기준, Actions는 최대 수 분 지연될 수 있음)
+    # Every 10 minutes (UTC; GitHub may delay a few minutes)
     - cron: "*/10 * * * *"
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/track.yml"
+      - "scripts/**"
+      - "app/**"
+      - "requirements.txt"
 
 permissions:
   contents: write
