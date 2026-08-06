@@ -34,7 +34,9 @@ function renderStages(stages) {
     return `<p class="muted">진행 단계 정보가 아직 없습니다. 다음 자동 조회 후 표시됩니다.</p>`;
   }
 
-  const rows = stages
+  // 유니패스처럼 최신 단계가 위로 오도록 역순 표시
+  const rows = [...stages]
+    .reverse()
     .map((stage, idx) => {
       const state = stage.state || "pending";
       const when =
