@@ -39,6 +39,7 @@ jobs:
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+          PUBLIC_PAGE_URL: https://ybs8625-cmd.github.io/customs-tracker/
           FIRST_NOTIFY: "0"
           STATE_PATH: data/state.json
         run: python scripts/check_and_notify.py

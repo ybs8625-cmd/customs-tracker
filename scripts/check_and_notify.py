@@ -68,20 +68,38 @@ def fingerprint(cargo: dict) -> str:
     )
 
 
+PUBLIC_PAGE_URL = os.getenv(
+    "PUBLIC_PAGE_URL",
+    "https://ybs8625-cmd.github.io/customs-tracker/",
+).strip()
+
+
+def format_processed_at(raw: str) -> str:
+    """Unipass processed_at (YYYYMMDDHHmmss) -> yy-MM-dd HH:mm:ss."""
+    text = (raw or "").strip()
+    if len(text) >= 14 and text[:14].isdigit():
+        return (
+            f"{text[2:4]}-{text[4:6]}-{text[6:8]} "
+            f"{text[8:10]}:{text[10:12]}:{text[12:14]}"
+        )
+    return text or "-"
+
+
 def build_message(cargo: dict, prev_status: str) -> str:
     hbl = cargo.get("hbl") or os.getenv("TRACK_HBL", "")
     status = cargo.get("status") or "-"
-    product = cargo.get("product_name") or ""
-    when = cargo.get("processed_at") or ""
+    product = (cargo.get("product_name") or "").strip()
+    when = format_processed_at(cargo.get("processed_at") or "")
     lines = [
-        "[통관알림]",
-        f"HBL {hbl}",
-        f"{prev_status or '-'} → {status}",
+        "[통관 업데이트 알림]",
+        f"송장번호 - {hbl}",
+        f"{prev_status or '-'} -> {status}",
+        f"변경일자 {when}",
     ]
     if product:
         lines.append(product)
-    if when:
-        lines.append(when)
+    if PUBLIC_PAGE_URL:
+        lines.append(f"바로조회 {PUBLIC_PAGE_URL}")
     return "\n".join(lines)
 
 
@@ -145,6 +163,7 @@ async def main() -> int:
             "hbl": hbl,
             "year": cargo.get("year"),
             "status": cargo.get("status"),
+            "product_name": cargo.get("product_name") or "",
             "processed_at": cargo.get("processed_at"),
             "fingerprint": curr_fp,
             "updated_at": datetime.now(timezone.utc).isoformat(),

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Customs Tracker · 통관 상태</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="shell">
+    <header class="top">
+      <div>
+        <p class="brand">Customs Tracker</p>
+        <h1>통관 진행상태</h1>
+        <p class="sub">GitHub Actions가 저장한 최신 통관 스냅샷입니다.</p>
+      </div>
+      <button type="button" class="refresh" id="refreshBtn">새로고침</button>
+    </header>
+
+    <section class="card" id="statusCard" aria-live="polite">
+      <p class="muted" id="loading">불러오는 중…</p>
+    </section>
+
+    <p class="foot muted">
+      데이터 소스:
+      <a href="https://github.com/ybs8625-cmd/customs-tracker/blob/master/data/state.json" target="_blank" rel="noreferrer">data/state.json</a>
+    </p>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
