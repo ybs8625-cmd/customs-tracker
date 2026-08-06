@@ -9,20 +9,18 @@ function formatProcessedAt(raw) {
   if (text.length >= 14 && /^\d{14}/.test(text)) {
     return `${text.slice(2, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)} ${text.slice(8, 10)}:${text.slice(10, 12)}:${text.slice(12, 14)}`;
   }
-  return text || "-";
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) {
+    return text.length >= 19 ? `${text.slice(2, 19)}` : text.slice(2);
+  }
+  return text;
 }
 
-function formatUpdatedAt(iso) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const yy = String(d.getFullYear()).slice(2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${yy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function pickLatest(state) {
@@ -31,17 +29,42 @@ function pickLatest(state) {
   return items.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
 }
 
+function renderStages(stages) {
+  if (!Array.isArray(stages) || !stages.length) {
+    return `<p class="muted">진행 단계 정보가 아직 없습니다. 다음 자동 조회 후 표시됩니다.</p>`;
+  }
+
+  const rows = stages
+    .map((stage, idx) => {
+      const state = stage.state || "pending";
+      const when =
+        formatProcessedAt(stage.processed_at) ||
+        (state === "current" ? "진행 중" : "");
+      return `
+        <div class="stage ${escapeHtml(state)}">
+          <div class="n">${idx + 1}</div>
+          <div class="body">
+            <div class="name">${escapeHtml(stage.name || "-")}</div>
+            <div class="when">${escapeHtml(when)}</div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `<div class="timeline">${rows}</div>`;
+}
+
 function renderItem(item) {
   card.innerHTML = `
     <p class="label">현재 단계</p>
-    <h2 class="status">${item.status || "-"}</h2>
-    <dl class="rows">
-      <div class="row"><dt>송장번호</dt><dd>${item.hbl || "-"}</dd></div>
-      <div class="row"><dt>품명</dt><dd>${item.product_name || "-"}</dd></div>
-      <div class="row"><dt>처리일시</dt><dd>${formatProcessedAt(item.processed_at)}</dd></div>
-      <div class="row"><dt>연도</dt><dd>${item.year || "-"}</dd></div>
-      <div class="row"><dt>스냅샷 갱신</dt><dd>${formatUpdatedAt(item.updated_at)}</dd></div>
+    <h2 class="status">${escapeHtml(item.status || "-")}</h2>
+    <dl class="meta">
+      <div class="row"><dt>송장번호</dt><dd>${escapeHtml(item.hbl || "-")}</dd></div>
+      <div class="row"><dt>품명</dt><dd>${escapeHtml(item.product_name || "-")}</dd></div>
     </dl>
+    <p class="label steps-label">처리 진행</p>
+    ${renderStages(item.stages)}
   `;
 }
 

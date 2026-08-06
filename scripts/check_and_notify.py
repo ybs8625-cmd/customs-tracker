@@ -158,19 +158,26 @@ async def main() -> int:
                 except KakaoError as exc:
                     print(f"카톡 전송 실패: {exc}", file=sys.stderr)
                     return 3
-
-        state[key] = {
-            "hbl": hbl,
-            "year": cargo.get("year"),
-            "status": cargo.get("status"),
-            "product_name": cargo.get("product_name") or "",
-            "processed_at": cargo.get("processed_at"),
-            "fingerprint": curr_fp,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        save_state(path, state)
     else:
         print("변경 없음")
+
+    # Pages 표시용 스냅샷 (변경 없어도 stages 동기화; 내용 같으면 git diff 없음)
+    state[key] = {
+        "hbl": hbl,
+        "year": cargo.get("year"),
+        "status": cargo.get("status"),
+        "product_name": cargo.get("product_name") or "",
+        "processed_at": cargo.get("processed_at"),
+        "fingerprint": curr_fp,
+        "current_stage_index": cargo.get("current_stage_index", -1),
+        "stages": cargo.get("stages") or [],
+        "updated_at": (
+            datetime.now(timezone.utc).isoformat()
+            if changed
+            else prev.get("updated_at") or datetime.now(timezone.utc).isoformat()
+        ),
+    }
+    save_state(path, state)
 
     return 0
 
