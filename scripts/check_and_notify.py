@@ -237,13 +237,16 @@ async def main() -> int:
             parts.append(build_customs_message(cargo, prev_customs.get("status", "")))
 
     if domestic_changed and domestic.get("found"):
-        first_dom = not prev_domestic_fp
-        if first_dom and not notify_first:
-            print("국내배송 첫 스냅샷만 저장 (알림 생략)")
+        if not clearance_done:
+            print("통관 진행 중 — 국내배송 카톡 알림 생략")
         else:
-            parts.append(
-                build_domestic_message(domestic, prev_domestic.get("status", ""))
-            )
+            first_dom = not prev_domestic_fp
+            if first_dom and not notify_first:
+                print("국내배송 첫 스냅샷만 저장 (알림 생략)")
+            else:
+                parts.append(
+                    build_domestic_message(domestic, prev_domestic.get("status", ""))
+                )
 
     if parts:
         try:
