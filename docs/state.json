@@ -2,6 +2,106 @@
   "509799520393:2026": {
     "hbl": "509799520393",
     "year": 2026,
+    "clearance_done": false,
+    "customs": {
+      "status": "통관목록접수",
+      "product_name": "X2 MINI GAMING DEVICE",
+      "processed_at": "20260805123721",
+      "fingerprint": "통관목록접수|20260805123721|26WDFCF289I09041013|통관목록접수|20260805123721",
+      "current_stage_index": 4,
+      "stages": [
+        {
+          "name": "입항적재화물목록 제출",
+          "state": "done",
+          "processed_at": "20260804223434",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
+        },
+        {
+          "name": "입항적재화물목록 심사완료",
+          "state": "done",
+          "processed_at": "20260804233440",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
+        },
+        {
+          "name": "입항보고 수리",
+          "state": "done",
+          "processed_at": "20260805082452",
+          "warehouse": ""
+        },
+        {
+          "name": "하선신고 수리",
+          "state": "done",
+          "processed_at": "20260805100015",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
+        },
+        {
+          "name": "통관목록접수",
+          "state": "current",
+          "processed_at": "20260805123721",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
+        },
+        {
+          "name": "수입신고",
+          "state": "pending",
+          "processed_at": "",
+          "warehouse": ""
+        },
+        {
+          "name": "수입신고수리",
+          "state": "pending",
+          "processed_at": "",
+          "warehouse": ""
+        },
+        {
+          "name": "물품반출",
+          "state": "pending",
+          "processed_at": "",
+          "warehouse": ""
+        }
+      ]
+    },
+    "domestic": {
+      "invoice": "699321406113",
+      "status": "배송완료",
+      "processed_at": "2026-07-28 20:07:06",
+      "location": "서울구로우영",
+      "fingerprint": "699321406113|배송완료|2026-07-28 20:07:06|배송완료|2026-07-28 20:07:06",
+      "found": true,
+      "error": "",
+      "current_stage_index": 4,
+      "stages": [
+        {
+          "name": "배송준비",
+          "state": "done",
+          "processed_at": "",
+          "location": ""
+        },
+        {
+          "name": "집화",
+          "state": "done",
+          "processed_at": "2026-07-27 16:33:45",
+          "location": "인천구월랜드마크"
+        },
+        {
+          "name": "이동중",
+          "state": "done",
+          "processed_at": "2026-07-27 17:24:40",
+          "location": "남동A"
+        },
+        {
+          "name": "배송중",
+          "state": "done",
+          "processed_at": "2026-07-28 15:38:41",
+          "location": "서울구로우영"
+        },
+        {
+          "name": "배송완료",
+          "state": "current",
+          "processed_at": "2026-07-28 20:07:06",
+          "location": "서울구로우영"
+        }
+      ]
+    },
     "status": "통관목록접수",
     "product_name": "X2 MINI GAMING DEVICE",
     "processed_at": "20260805123721",
@@ -57,6 +157,6 @@
         "warehouse": ""
       }
     ],
-    "updated_at": "2026-08-06T01:03:22.947321+00:00"
+    "updated_at": "2026-08-06T02:18:50.841036+00:00"
   }
 }

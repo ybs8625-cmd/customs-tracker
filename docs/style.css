@@ -203,6 +203,11 @@ h1 {
   font-weight: 600;
 }
 
+.note {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
 .foot {
   margin: 18px 0 0;
   font-size: 13px;

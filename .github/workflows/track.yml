@@ -36,6 +36,7 @@ jobs:
           UNIPASS_API_KEY: ${{ secrets.UNIPASS_API_KEY }}
           TRACK_HBL: ${{ secrets.TRACK_HBL }}
           TRACK_YEAR: ${{ secrets.TRACK_YEAR }}
+          TRACK_CJ_INVOICE: ${{ secrets.TRACK_CJ_INVOICE }}
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
