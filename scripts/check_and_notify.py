@@ -50,7 +50,12 @@ def load_state(path: Path) -> dict:
 
 def save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = json.dumps(state, ensure_ascii=False, indent=2)
+    path.write_text(payload, encoding="utf-8")
+    # GitHub Pages가 CDN 캐시 없이 바로 읽도록 동기화
+    pages_state = ROOT / "docs" / "state.json"
+    pages_state.parent.mkdir(parents=True, exist_ok=True)
+    pages_state.write_text(payload + "\n", encoding="utf-8")
 
 
 def fingerprint(cargo: dict) -> str:

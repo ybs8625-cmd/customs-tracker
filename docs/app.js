@@ -1,5 +1,5 @@
-const STATE_URL =
-  "https://raw.githubusercontent.com/ybs8625-cmd/customs-tracker/master/data/state.json";
+// Pages 자체 파일 사용 (raw.githubusercontent.com CDN 캐시 회피)
+const STATE_URL = "./state.json";
 
 const card = document.getElementById("statusCard");
 const refreshBtn = document.getElementById("refreshBtn");

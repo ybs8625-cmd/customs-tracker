@@ -46,10 +46,10 @@ jobs:
 
       - name: Commit state if changed
         run: |
-          if [ -n "$(git status --porcelain data/state.json)" ]; then
+          if [ -n "$(git status --porcelain data/state.json docs/state.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data/state.json
+            git add data/state.json docs/state.json
             git commit -m "chore: update customs track state"
             git push
           else
