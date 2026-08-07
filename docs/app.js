@@ -130,20 +130,22 @@ function renderCustoms(item, customs) {
 function renderDomestic(item, domestic) {
   if (pageTitle) pageTitle.textContent = "국내배송 진행상태";
   if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력입니다.";
-  const status = domestic?.status || "배송준비";
+  const events = domestic?.events || [];
+  const latest = events[0] || {};
+  const status =
+    latest.raw_status ||
+    latest.stage ||
+    domestic?.status ||
+    "배송준비";
   const invoice = domestic?.invoice || item.hbl || "-";
-  const when = formatProcessedAt(domestic?.processed_at) || "-";
+  const when = formatProcessedAt(latest.processed_at || domestic?.processed_at) || "-";
   const note = domestic?.error
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
-  const events = domestic?.events || [];
   const detailBlock = events.length
     ? renderDomesticEvents(events)
     : `<p class="muted">아직 배송 이력이 없습니다.</p>`;
-  const loc =
-    (events[0] && events[0].location) ||
-    domestic?.location ||
-    "-";
+  const loc = latest.location || domestic?.location || "-";
   card.innerHTML = `
     <p class="label">현재 단계</p>
     <h2 class="status">${escapeHtml(status)}</h2>

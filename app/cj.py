@@ -24,7 +24,7 @@ STAGE_FLOW = [
     "배송완료",
 ]
 
-# CJ crgSt / nsDlvNm -> 표시 상태
+# CJ crgSt / nsDlvNm -> 큰 단계(집화/이동중…)
 STATUS_BY_CODE = {
     "01": "배송준비",
     "11": "집화",
@@ -39,6 +39,38 @@ STATUS_BY_CODE = {
     "82": "배송중",
     "84": "배송중",
     "91": "배송완료",
+}
+
+# CJ 코드 -> 상세 스캔명 (간선상차/하차 등 그대로 표기)
+SCAN_LABEL_BY_CODE = {
+    "01": "배송준비",
+    "11": "집화처리",
+    "12": "집화처리",
+    "R1": "행낭포장",
+    "21": "SM입고",
+    "41": "간선하차",
+    "42": "간선하차",
+    "43": "간선이동중",
+    "44": "간선상차",
+    "82": "배송출발",
+    "84": "배송중",
+    "91": "배송완료",
+}
+
+# 같은 시각일 때 상세 스캔 순서
+SCAN_ORDER = {
+    "01": 1,
+    "11": 2,
+    "12": 2,
+    "R1": 3,
+    "21": 4,
+    "44": 5,
+    "43": 6,
+    "42": 7,
+    "41": 8,
+    "82": 9,
+    "84": 10,
+    "91": 11,
 }
 
 STAGE_INDEX = {name: i for i, name in enumerate(STAGE_FLOW)}
@@ -75,8 +107,23 @@ def _normalize_invoice(invoice: str) -> str:
     return re.sub(r"\D", "", (invoice or "").strip())
 
 
+def _norm_code(code: str) -> str:
+    return (code or "").strip().upper()
+
+
+def _scan_label(code: str, scan_nm: str = "") -> str:
+    """상세 표기명: scanNm 우선, 없으면 코드 라벨."""
+    text = (scan_nm or "").strip()
+    if text:
+        return text
+    key = _norm_code(code)
+    return SCAN_LABEL_BY_CODE.get(key) or SCAN_LABEL_BY_CODE.get(code) or key or "처리"
+
+
 def _map_status(code: str, scan_nm: str) -> str:
-    code = (code or "").strip()
+    code_key = _norm_code(code)
+    if code_key in STATUS_BY_CODE:
+        return STATUS_BY_CODE[code_key]
     if code in STATUS_BY_CODE:
         return STATUS_BY_CODE[code]
     text = (scan_nm or "").strip()
@@ -91,7 +138,11 @@ def _map_status(code: str, scan_nm: str) -> str:
         ("배송중", "배송중"),
         ("행낭포장", "행낭포장"),
         ("행낭", "행낭포장"),
+        ("간선상차", "이동중"),
+        ("간선하차", "이동중"),
+        ("간선이동", "이동중"),
         ("간선", "이동중"),
+        ("SM입고", "이동중"),
         ("이동", "이동중"),
         ("도착", "이동중"),
         ("집화", "집화"),
@@ -245,38 +296,35 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
     for row in events_raw:
         code = str(row.get("crgSt") or "")
         scan = str(row.get("scanNm") or "")
-        stage = _map_status(code, scan)
+        label = _scan_label(code, scan)
+        stage = _map_status(code, label)
         events.append(
             CjEvent(
                 stage=stage,
                 processed_at=str(row.get("dTime") or ""),
                 location=str(row.get("regBranNm") or ""),
-                status_code=code,
-                raw_status=scan or stage,
+                status_code=_norm_code(code) or code,
+                raw_status=label,
                 note=str(row.get("crgNm") or "").strip(),
             )
         )
 
-    # 요약의 nsDlvNm(예: R1=행낭포장)은 상세 resultList에 빠진 경우가 많음 → 보강
+    # 요약 nsDlvNm(R1/41 등)은 상세에 없는 경우가 많음 → 코드 기준으로만 보강
+    # (같은 '이동중'이라도 간선상차≠간선하차 이므로 stage 일치로는 스킵하지 않음)
     summary = summary_rows[0] if summary_rows else {}
-    ns_code = str(summary.get("nsDlvNm") or "").strip()
+    ns_code = _norm_code(str(summary.get("nsDlvNm") or ""))
     if ns_code:
-        ns_stage = _map_status(ns_code, ns_code)
-        ns_label = STATUS_BY_CODE.get(ns_code) or STATUS_BY_CODE.get(ns_code.upper()) or ns_stage
-        already = any(
-            (ev.status_code or "").upper() == ns_code.upper()
-            or ev.raw_status == ns_label
-            or ev.stage == ns_stage
-            for ev in events
-        )
-        if not already and ns_stage:
+        already = any(_norm_code(ev.status_code) == ns_code for ev in events)
+        if not already:
+            ns_label = _scan_label(ns_code, "")
+            ns_stage = _map_status(ns_code, ns_label)
             anchor_time = events[-1].processed_at if events else ""
             events.append(
                 CjEvent(
-                    stage=ns_stage if ns_stage in STAGE_INDEX else "행낭포장",
+                    stage=ns_stage if ns_stage in STAGE_INDEX else ns_label,
                     processed_at=anchor_time,
                     location="",
-                    status_code=ns_code.upper(),
+                    status_code=ns_code,
                     raw_status=ns_label,
                     note="",
                 )
@@ -295,10 +343,11 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
             error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
         )
 
-    # 같은 시각이면 단계 index가 큰 쪽이 더 최신
+    # 시간 → 상세 스캔 순서 → 단계 index
     events.sort(
         key=lambda ev: (
             ev.processed_at or "",
+            SCAN_ORDER.get(_norm_code(ev.status_code), 50),
             STAGE_INDEX.get(ev.stage, -1),
         )
     )
@@ -308,11 +357,13 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
         (STAGE_INDEX[ev.stage] for ev in events if ev.stage in STAGE_INDEX),
         default=0,
     )
-    status = latest.stage if latest.stage in STAGE_INDEX else _map_status(
+    # 화면/알림 현재상태는 상세 스캔명 (간선하차 등)
+    status = latest.raw_status or latest.stage
+    stage_for_idx = latest.stage if latest.stage in STAGE_INDEX else _map_status(
         latest.status_code, latest.raw_status
     )
-    if status in STAGE_INDEX:
-        current_idx = max(current_idx, STAGE_INDEX[status])
+    if stage_for_idx in STAGE_INDEX:
+        current_idx = max(current_idx, STAGE_INDEX[stage_for_idx])
 
     return CjTrack(
         found=True,
