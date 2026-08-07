@@ -55,17 +55,20 @@ function renderStages(stages) {
     return `<p class="muted">진행 단계 정보가 아직 없습니다. 다음 자동 조회 후 표시됩니다.</p>`;
   }
 
-  const rows = [...stages]
-    .reverse()
+  // 표출: 최신/상위 단계가 위. 번호: 아래가 1
+  const rows = [...stages].reverse();
+  const total = rows.length;
+  const html = rows
     .map((stage, idx) => {
       const state = stage.state || "pending";
       const when =
         formatProcessedAt(stage.processed_at) ||
         (state === "current" ? "진행 중" : "");
       const loc = stage.location ? ` · ${stage.location}` : "";
+      const num = total - idx;
       return `
         <div class="stage ${escapeHtml(state)}">
-          <div class="n">${idx + 1}</div>
+          <div class="n">${num}</div>
           <div class="body">
             <div class="name">${escapeHtml(stage.name || "-")}</div>
             <div class="when">${escapeHtml(when)}${escapeHtml(loc)}</div>
@@ -75,7 +78,7 @@ function renderStages(stages) {
     })
     .join("");
 
-  return `<div class="timeline">${rows}</div>`;
+  return `<div class="timeline">${html}</div>`;
 }
 
 function renderDomesticEvents(events) {
@@ -83,16 +86,19 @@ function renderDomesticEvents(events) {
     return "";
   }
 
-  const rows = events
+  // 표출: 최신이 위(기존 유지). 번호: 아래(과거)가 1
+  const total = events.length;
+  const html = events
     .map((ev, idx) => {
       const name = ev.raw_status || ev.stage || "-";
       const when = formatProcessedAt(ev.processed_at) || "";
       const loc = ev.location ? ` · ${ev.location}` : "";
       const note = ev.note ? `<div class="ev-note">${escapeHtml(ev.note)}</div>` : "";
       const state = idx === 0 ? "current" : "done";
+      const num = total - idx;
       return `
         <div class="stage ${state}">
-          <div class="n">${idx + 1}</div>
+          <div class="n">${num}</div>
           <div class="body">
             <div class="name">${escapeHtml(name)}</div>
             <div class="when">${escapeHtml(when)}${escapeHtml(loc)}</div>
@@ -103,7 +109,7 @@ function renderDomesticEvents(events) {
     })
     .join("");
 
-  return `<div class="timeline">${rows}</div>`;
+  return `<div class="timeline">${html}</div>`;
 }
 
 function renderCustoms(item, customs) {
