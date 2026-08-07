@@ -58,15 +58,55 @@
           "processed_at": "20260807160837",
           "warehouse": "인천세관 지정장치장(특송물류센터)"
         }
-      ],
-      "error": "유니패스 연결 실패: ConnectTimeout (cause=ConnectTimeout)"
+      ]
     },
     "domestic": {
-      "found": true,
       "invoice": "509799520393",
       "status": "간선상차",
       "processed_at": "2026-08-07 20:45:09",
       "location": "곤지암Hub",
+      "fingerprint": "509799520393|간선상차|2026-08-07 20:45:09|5|44|간선상차|2026-08-07 20:45:09|곤지암Hub|42|간선하차|2026-08-07 20:43:35|곤지암Hub|42|간선하차|2026-08-07 20:38:44|곤지암Hub|R1|행낭포장|2026-08-07 16:14:18|인천항만센터|11|집화처리|2026-08-07 16:14:18|[집화]코어물류",
+      "found": true,
+      "error": "",
+      "current_stage_index": 3,
+      "stages": [
+        {
+          "name": "배송준비",
+          "state": "done",
+          "processed_at": "",
+          "location": ""
+        },
+        {
+          "name": "집화",
+          "state": "done",
+          "processed_at": "2026-08-07 16:14:18",
+          "location": "[집화]코어물류"
+        },
+        {
+          "name": "행낭포장",
+          "state": "done",
+          "processed_at": "2026-08-07 16:14:18",
+          "location": "인천항만센터"
+        },
+        {
+          "name": "이동중",
+          "state": "current",
+          "processed_at": "2026-08-07 20:38:44",
+          "location": "곤지암Hub"
+        },
+        {
+          "name": "배송중",
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
+        },
+        {
+          "name": "배송완료",
+          "state": "pending",
+          "processed_at": "",
+          "location": ""
+        }
+      ],
       "events": [
         {
           "stage": "이동중",
@@ -108,49 +148,7 @@
           "raw_status": "집화처리",
           "note": "보내시는 고객님으로부터 상품을 인수받았습니다"
         }
-      ],
-      "current_stage_index": 3,
-      "stages": [
-        {
-          "name": "배송준비",
-          "state": "done",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "집화",
-          "state": "done",
-          "processed_at": "2026-08-07 16:14:18",
-          "location": "[집화]코어물류"
-        },
-        {
-          "name": "행낭포장",
-          "state": "done",
-          "processed_at": "2026-08-07 16:14:18",
-          "location": "인천항만센터"
-        },
-        {
-          "name": "이동중",
-          "state": "current",
-          "processed_at": "2026-08-07 20:38:44",
-          "location": "곤지암Hub"
-        },
-        {
-          "name": "배송중",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "배송완료",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        }
-      ],
-      "error": "",
-      "source": "cj-next",
-      "fingerprint": "509799520393|간선상차|2026-08-07 20:45:09|5|44|간선상차|2026-08-07 20:45:09|곤지암Hub|42|간선하차|2026-08-07 20:43:35|곤지암Hub|42|간선하차|2026-08-07 20:38:44|곤지암Hub|R1|행낭포장|2026-08-07 16:14:18|인천항만센터|11|집화처리|2026-08-07 16:14:18|[집화]코어물류"
+      ]
     },
     "status": "반출신고",
     "product_name": "X2 MINI GAMING DEVICE",
@@ -207,6 +205,6 @@
         "warehouse": "인천세관 지정장치장(특송물류센터)"
       }
     ],
-    "updated_at": "2026-08-07T12:37:55.482051+00:00"
+    "updated_at": "2026-08-07T12:37:55.481520+00:00"
   }
 }
