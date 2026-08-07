@@ -62,45 +62,14 @@
     },
     "domestic": {
       "invoice": "509799520393",
-      "status": "배송준비",
+      "status": "",
       "processed_at": "",
       "location": "",
-      "fingerprint": "509799520393|배송준비||",
-      "found": true,
-      "error": "운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
-      "current_stage_index": 0,
-      "stages": [
-        {
-          "name": "배송준비",
-          "state": "current",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "집화",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "이동중",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "배송중",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        },
-        {
-          "name": "배송완료",
-          "state": "pending",
-          "processed_at": "",
-          "location": ""
-        }
-      ]
+      "fingerprint": "509799520393|||",
+      "found": false,
+      "error": "CJ 조회 실패: ",
+      "current_stage_index": -1,
+      "stages": []
     },
     "status": "통관목록접수",
     "product_name": "X2 MINI GAMING DEVICE",
@@ -157,6 +126,6 @@
         "warehouse": ""
       }
     ],
-    "updated_at": "2026-08-06T02:21:32.873329+00:00"
+    "updated_at": "2026-08-07T06:13:58.628544+00:00"
   }
 }
