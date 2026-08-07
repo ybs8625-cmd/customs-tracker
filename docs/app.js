@@ -40,10 +40,13 @@ function normalizeItem(item) {
     stages: item.stages || [],
   };
   const domestic = item.domestic || null;
+  const statusText = String(customs.status || "");
   const clearanceDone =
     item.clearance_done === true ||
     Number(customs.current_stage_index) >= 7 ||
-    String(customs.status || "").includes("물품반출");
+    statusText.includes("물품반출") ||
+    statusText.includes("반출신고") ||
+    statusText.includes("반출완료");
   return { item, customs, domestic, clearanceDone };
 }
 

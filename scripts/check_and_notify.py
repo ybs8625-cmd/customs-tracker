@@ -79,16 +79,17 @@ def format_processed_at(raw: str) -> str:
 
 
 def customs_fingerprint(cargo: dict) -> str:
-    latest = ""
     events = cargo.get("events") or []
-    if events:
-        latest = f"{events[0].get('stage','')}|{events[0].get('processed_at','')}"
+    # 최신 이벤트 3개까지 포함 — 헤더 상태가 그대로여도 상세 갱신을 감지
+    latest_bits = [
+        f"{ev.get('stage', '')}|{ev.get('processed_at', '')}" for ev in events[:3]
+    ]
     return "|".join(
         [
             cargo.get("status") or "",
             cargo.get("processed_at") or "",
             cargo.get("cargo_no") or "",
-            latest,
+            *latest_bits,
         ]
     )
 
@@ -260,8 +261,9 @@ async def main() -> int:
     customs_changed = bool(customs_ok and prev_customs_fp != curr_customs_fp)
     domestic_changed = (not domestic_stale) and prev_domestic_fp != curr_domestic_fp
     if customs_ok:
-        clearance_done = int(cargo.get("current_stage_index", -1)) >= 7 or "물품반출" in (
-            cargo.get("status") or ""
+        status_text = cargo.get("status") or ""
+        clearance_done = int(cargo.get("current_stage_index", -1)) >= 7 or any(
+            key in status_text for key in ("물품반출", "반출신고", "반출완료")
         )
     else:
         clearance_done = bool(prev.get("clearance_done"))

@@ -20,15 +20,37 @@ _MAX_ATTEMPTS = 3
 _RETRY_DELAYS_SEC = (1.0, 2.0)
 
 # 특송·일반 공통 진행 단계 (표시용)
+# 일반: 수입신고 → 수입신고수리 → 물품반출
+# 특송: 통관특례신청완료 → 반입신고 → 반출신고
 STAGE_FLOW = [
     "입항적재화물목록 제출",
     "입항적재화물목록 심사완료",
     "입항보고 수리",
     "하선신고 수리",
     "통관목록접수",
-    "수입신고",
-    "수입신고수리",
+    "통관특례·수입신고",
+    "반입·수입신고수리",
     "물품반출",
+]
+
+# 이벤트/상태 문자열 → STAGE_FLOW index
+_STAGE_ALIASES: list[tuple[str, int]] = [
+    ("물품반출", 7),
+    ("반출신고", 7),
+    ("반출", 7),
+    ("수입신고수리", 6),
+    ("반입신고", 6),
+    ("반입", 6),
+    ("통관특례", 5),
+    ("수입신고", 5),
+    ("통관목록", 4),
+    ("목록통관", 4),
+    ("하선", 3),
+    ("입항보고", 2),
+    ("심사완료", 1),
+    ("목록 제출", 0),
+    ("적재화물목록 제출", 0),
+    ("적하목록", 0),
 ]
 
 
@@ -84,55 +106,61 @@ def _text(node: ET.Element | None, tag: str, default: str = "") -> str:
     return child.text.strip()
 
 
-def _match_stage_index(status: str, events: list[ProgressEvent]) -> int:
-    haystacks = [status] + [e.stage for e in events]
+def _stage_index_for_text(text: str) -> int:
+    raw = (text or "").strip()
+    if not raw:
+        return -1
     best = -1
     for i, stage in enumerate(STAGE_FLOW):
-        for h in haystacks:
-            if stage in h or h in stage:
-                best = max(best, i)
-    # 느슨한 매칭
-    aliases = {
-        "통관목록": 4,
-        "목록통관": 4,
-        "수입신고수리": 6,
-        "수입신고": 5,
-        "물품반출": 7,
-        "반출": 7,
-        "하선": 3,
-        "입항보고": 2,
-        "심사완료": 1,
-        "목록 제출": 0,
-        "적재화물목록 제출": 0,
-    }
-    for h in haystacks:
-        for key, idx in aliases.items():
-            if key in h:
-                best = max(best, idx)
+        if stage in raw or raw in stage:
+            best = max(best, i)
+    for key, idx in _STAGE_ALIASES:
+        if key in raw:
+            best = max(best, idx)
     return best
 
 
-def _build_stages(current_index: int, events: list[ProgressEvent]) -> list[dict[str, Any]]:
-    event_by_stage: dict[str, ProgressEvent] = {}
+def _match_stage_index(status: str, events: list[ProgressEvent]) -> int:
+    best = _stage_index_for_text(status)
     for ev in events:
-        for stage in STAGE_FLOW:
-            if stage in ev.stage or ev.stage in stage:
-                event_by_stage[stage] = ev
-                break
+        best = max(best, _stage_index_for_text(ev.stage))
+    return best
+
+
+def _display_name_for_event(stage_idx: int, ev: ProgressEvent | None) -> str:
+    """특송 실이벤트명이 있으면 그대로 보여 주고, 없으면 공통 단계명."""
+    if ev and (ev.stage or "").strip():
+        return ev.stage.strip()
+    if 0 <= stage_idx < len(STAGE_FLOW):
+        return STAGE_FLOW[stage_idx]
+    return "-"
+
+
+def _build_stages(current_index: int, events: list[ProgressEvent]) -> list[dict[str, Any]]:
+    event_by_index: dict[int, ProgressEvent] = {}
+    for ev in events:
+        idx = _stage_index_for_text(ev.stage)
+        if idx < 0:
+            continue
+        prev = event_by_index.get(idx)
+        # 같은 단계는 최초 시각 유지
+        if prev is None or (ev.processed_at or "") < (prev.processed_at or ""):
+            event_by_index[idx] = ev
 
     stages: list[dict[str, Any]] = []
     for i, name in enumerate(STAGE_FLOW):
-        state = "pending"
         if current_index < 0:
             state = "pending"
         elif i < current_index:
             state = "done"
         elif i == current_index:
             state = "current"
-        ev = event_by_stage.get(name)
+        else:
+            state = "pending"
+        ev = event_by_index.get(i)
         stages.append(
             {
-                "name": name,
+                "name": _display_name_for_event(i, ev) if ev else name,
                 "state": state,
                 "processed_at": ev.processed_at if ev else "",
                 "warehouse": ev.warehouse if ev else "",
@@ -185,15 +213,26 @@ def parse_unipass_xml(xml_text: str, hbl: str, year: int) -> CargoTrack:
             )
         )
 
-    # 이벤트 순서: 최신이 위인 경우가 많아 시간순 정렬 시도
-    def sort_key(ev: ProgressEvent) -> str:
-        return ev.processed_at or ""
+    # 이벤트 순서: 시간 → 단계 index (같은 시각이면 더 진행된 단계가 최신)
+    def sort_key(ev: ProgressEvent) -> tuple[str, int]:
+        return (ev.processed_at or "", _stage_index_for_text(ev.stage))
 
     events_sorted = sorted(events, key=sort_key)
 
     status = _text(info, "csclPrgsStts") or _text(info, "prgsStts")
     status_detail = _text(info, "prgsStts") or status
     current_idx = _match_stage_index(status, events_sorted)
+    processed_at = _text(info, "prcsDttm")
+
+    # 헤더 상태가 늦어도(특송 반출신고 등) 최신 이벤트 기준으로 표시/알림
+    if events_sorted:
+        newest = events_sorted[-1]
+        newest_idx = _stage_index_for_text(newest.stage)
+        if newest_idx > _stage_index_for_text(status):
+            status = newest.stage
+            current_idx = max(current_idx, newest_idx)
+            if newest.processed_at:
+                processed_at = newest.processed_at
 
     track = CargoTrack(
         found=True,
@@ -214,7 +253,7 @@ def parse_unipass_xml(xml_text: str, hbl: str, year: int) -> CargoTrack:
         vessel=_text(info, "shipNm"),
         container=_text(info, "cntrNo"),
         cargo_type=_text(info, "cargTp"),
-        processed_at=_text(info, "prcsDttm"),
+        processed_at=processed_at,
         events=list(reversed(events_sorted)),  # 최신 먼저
         current_stage_index=current_idx,
         stages=_build_stages(current_idx, events_sorted),
