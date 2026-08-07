@@ -123,7 +123,7 @@ function renderCustoms(item, customs) {
 
 function renderDomestic(item, domestic) {
   if (pageTitle) pageTitle.textContent = "국내배송 진행상태";
-  if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력을 시간순으로 표시합니다.";
+  if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력입니다.";
   const status = domestic?.status || "배송준비";
   const invoice = domestic?.invoice || item.hbl || "-";
   const when = formatProcessedAt(domestic?.processed_at) || "-";
@@ -131,13 +131,12 @@ function renderDomestic(item, domestic) {
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
   const events = domestic?.events || [];
-  // 상세 이력이 있으면 단계 요약은 숨김 (번호/내용 중복 혼란 방지)
   const detailBlock = events.length
     ? renderDomesticEvents(events)
-    : renderStages(domestic?.stages || []);
+    : `<p class="muted">아직 배송 이력이 없습니다.</p>`;
   const loc =
-    domestic?.location ||
     (events[0] && events[0].location) ||
+    domestic?.location ||
     "-";
   card.innerHTML = `
     <p class="label">현재 단계</p>
@@ -149,7 +148,7 @@ function renderDomestic(item, domestic) {
       <div class="row"><dt>최종갱신</dt><dd>${escapeHtml(when)}</dd></div>
     </dl>
     ${note}
-    <p class="label steps-label">배송 상세 이력</p>
+    <p class="label steps-label">배송 이력</p>
     ${detailBlock}
   `;
 }
