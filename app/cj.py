@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -10,6 +11,8 @@ import httpx
 
 TRACKING_PAGE = "https://www.cjlogistics.com/ko/tool/parcel/tracking"
 TRACKING_DETAIL = "https://www.cjlogistics.com/ko/tool/parcel/tracking-detail"
+_MAX_ATTEMPTS = 4
+_RETRY_DELAYS_SEC = (0.8, 1.5, 3.0)
 
 # 표시용 국내배송 단계
 STAGE_FLOW = [
@@ -138,17 +141,39 @@ def _extract_csrf(html: str) -> str | None:
     return m.group(1) if m else None
 
 
-async def fetch_cj_tracking(invoice: str) -> CjTrack:
-    inv = _normalize_invoice(invoice)
-    if not inv:
-        return CjTrack(found=False, error="CJ 송장번호가 없습니다.")
-    if len(inv) not in {10, 12}:
-        return CjTrack(
-            found=False,
-            invoice=inv,
-            error=f"CJ 송장번호 형식이 올바르지 않습니다: {inv}",
-        )
+def _format_http_error(exc: BaseException) -> str:
+    parts = [type(exc).__name__]
+    text = str(exc).strip()
+    if text:
+        parts.append(text)
+    cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+    if cause is not None:
+        cause_text = str(cause).strip() or type(cause).__name__
+        parts.append(f"cause={cause_text}")
+    return ": ".join(parts) if len(parts) > 1 else parts[0]
 
+
+def _is_transient_error(exc: BaseException) -> bool:
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ConnectTimeout,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ReadError,
+            httpx.WriteError,
+        ),
+    ):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in {408, 425, 429, 500, 502, 503, 504}
+    return False
+
+
+async def _fetch_cj_once(inv: str) -> CjTrack:
     timeout = httpx.Timeout(30.0, connect=20.0)
     headers = {
         "User-Agent": (
@@ -156,42 +181,40 @@ async def fetch_cj_tracking(invoice: str) -> CjTrack:
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/122.0.0.0 Safari/537.36"
         ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
     }
 
-    try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            headers=headers,
-            follow_redirects=True,
-        ) as client:
-            page = await client.get(TRACKING_PAGE)
-            page.raise_for_status()
-            csrf = _extract_csrf(page.text)
-            if not csrf:
-                return CjTrack(
-                    found=False,
-                    invoice=inv,
-                    error="CJ CSRF 토큰을 찾지 못했습니다.",
-                )
-
-            detail = await client.post(
-                TRACKING_DETAIL,
-                data={"_csrf": csrf, "paramInvcNo": inv},
-                headers={
-                    **headers,
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "Referer": TRACKING_PAGE,
-                    "Origin": "https://www.cjlogistics.com",
-                    "X-Requested-With": "XMLHttpRequest",
-                },
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        headers=headers,
+        follow_redirects=True,
+        http2=False,
+    ) as client:
+        page = await client.get(TRACKING_PAGE)
+        page.raise_for_status()
+        csrf = _extract_csrf(page.text)
+        if not csrf:
+            return CjTrack(
+                found=False,
+                invoice=inv,
+                error="CJ CSRF 토큰을 찾지 못했습니다.",
             )
-            detail.raise_for_status()
-            payload = detail.json()
-    except httpx.HTTPError as exc:
-        return CjTrack(found=False, invoice=inv, error=f"CJ 조회 실패: {exc}")
-    except ValueError as exc:
-        return CjTrack(found=False, invoice=inv, error=f"CJ 응답 파싱 실패: {exc}")
+
+        detail = await client.post(
+            TRACKING_DETAIL,
+            data={"_csrf": csrf, "paramInvcNo": inv},
+            headers={
+                **headers,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Referer": TRACKING_PAGE,
+                "Origin": "https://www.cjlogistics.com",
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+        )
+        detail.raise_for_status()
+        payload = detail.json()
 
     detail_map = payload.get("parcelDetailResultMap") or {}
     events_raw = detail_map.get("resultList") or []
@@ -245,3 +268,50 @@ async def fetch_cj_tracking(invoice: str) -> CjTrack:
         current_stage_index=current_idx,
         stages=_build_stages(current_idx, events),
     )
+
+
+async def fetch_cj_tracking(invoice: str) -> CjTrack:
+    inv = _normalize_invoice(invoice)
+    if not inv:
+        return CjTrack(found=False, error="CJ 송장번호가 없습니다.")
+    if len(inv) not in {10, 12}:
+        return CjTrack(
+            found=False,
+            invoice=inv,
+            error=f"CJ 송장번호 형식이 올바르지 않습니다: {inv}",
+        )
+
+    last_error = ""
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            track = await _fetch_cj_once(inv)
+            # CSRF 미검출도 재시도 (간헐적 HTML 차단/리셋)
+            if (
+                not track.found
+                and "CSRF" in (track.error or "")
+                and attempt < _MAX_ATTEMPTS
+            ):
+                last_error = track.error
+                await asyncio.sleep(_RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)])
+                continue
+            if attempt > 1 and track.found:
+                track.error = (track.error or "").strip()
+            return track
+        except httpx.HTTPError as exc:
+            last_error = f"CJ 조회 실패: {_format_http_error(exc)}"
+            if attempt < _MAX_ATTEMPTS and _is_transient_error(exc):
+                await asyncio.sleep(
+                    _RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)]
+                )
+                continue
+            return CjTrack(found=False, invoice=inv, error=last_error)
+        except ValueError as exc:
+            last_error = f"CJ 응답 파싱 실패: {exc}"
+            if attempt < _MAX_ATTEMPTS:
+                await asyncio.sleep(
+                    _RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)]
+                )
+                continue
+            return CjTrack(found=False, invoice=inv, error=last_error)
+
+    return CjTrack(found=False, invoice=inv, error=last_error or "CJ 조회 실패")

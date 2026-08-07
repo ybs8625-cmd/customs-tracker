@@ -79,16 +79,17 @@ def format_processed_at(raw: str) -> str:
 
 
 def customs_fingerprint(cargo: dict) -> str:
-    latest = ""
     events = cargo.get("events") or []
-    if events:
-        latest = f"{events[0].get('stage','')}|{events[0].get('processed_at','')}"
+    # 최신 이벤트 3개까지 포함 — 헤더 상태가 그대로여도 상세 갱신을 감지
+    latest_bits = [
+        f"{ev.get('stage', '')}|{ev.get('processed_at', '')}" for ev in events[:3]
+    ]
     return "|".join(
         [
             cargo.get("status") or "",
             cargo.get("processed_at") or "",
             cargo.get("cargo_no") or "",
-            latest,
+            *latest_bits,
         ]
     )
 
@@ -130,6 +131,7 @@ def build_domestic_message(track: dict, prev_status: str) -> str:
     invoice = track.get("invoice") or ""
     status = track.get("status") or "-"
     when = format_processed_at(track.get("processed_at") or "")
+    location = (track.get("location") or "").strip()
     lines = [
         "[국내배송 업데이트 알림]",
         f"송장번호 - {invoice}",
@@ -137,6 +139,8 @@ def build_domestic_message(track: dict, prev_status: str) -> str:
     ]
     if when and when != "-":
         lines.append(f"변경일자 {when}")
+    if location:
+        lines.append(f"위치 {location}")
     if PUBLIC_PAGE_URL:
         lines.append(f"바로조회 {PUBLIC_PAGE_URL}")
     return "\n".join(lines)
@@ -156,6 +160,30 @@ def _legacy_customs(prev: dict) -> dict:
         "current_stage_index": prev.get("current_stage_index", -1),
         "stages": prev.get("stages") or [],
     }
+
+
+def _is_transient_domestic_error(error: str) -> bool:
+    text = (error or "").strip()
+    return text.startswith(
+        (
+            "CJ 조회 실패:",
+            "CJ 응답 파싱 실패:",
+            "CJ CSRF 토큰을 찾지 못했습니다.",
+        )
+    )
+
+
+def _is_meaningful_domestic(track: dict) -> bool:
+    """미등록/배송준비(이벤트 없음)는 알림 노이즈로 보고 제외."""
+    if not track.get("found"):
+        return False
+    status = (track.get("status") or "").strip()
+    events = track.get("events") or []
+    if not status:
+        return False
+    if status == "배송준비" and not events:
+        return False
+    return True
 
 
 async def _send_messages(parts: list[str], *, dry_run: bool) -> None:
@@ -186,43 +214,83 @@ async def main() -> int:
 
     cargo_obj = await fetch_cargo(hbl=hbl, year=year)
     cargo = cargo_obj.to_dict()
-    if not cargo_obj.found:
+    customs_ok = bool(cargo_obj.found)
+    if not customs_ok:
         print(f"통관 조회 실패: {cargo_obj.error}", file=sys.stderr)
-        return 1
 
     cj_obj = await fetch_cj_tracking(cj_invoice)
     domestic = cj_obj.to_dict()
 
     path = _state_path()
     state = load_state(path)
-    key = f"{hbl}:{cargo.get('year')}"
+    year_key = cargo.get("year") or year or datetime.now(timezone.utc).year
+    key = f"{hbl}:{year_key}"
     prev = state.get(key) or {}
+    # 연도 키 불일치 시 기존 HBL 엔트리 fallback
+    if not prev:
+        for cand_key, cand in state.items():
+            if str(cand_key).startswith(f"{hbl}:"):
+                prev = cand
+                key = str(cand_key)
+                break
     prev_customs = _legacy_customs(prev)
     prev_domestic = prev.get("domestic") or {}
 
-    curr_customs_fp = customs_fingerprint(cargo)
+    domestic_stale = False
+    if (
+        not domestic.get("found")
+        and _is_transient_domestic_error(str(domestic.get("error") or ""))
+        and prev_domestic.get("found")
+    ):
+        # 일시 장애로 성공 스냅샷을 덮어쓰지 않음 (변경 감지/알림 누락 방지)
+        domestic_stale = True
+        print(
+            f"CJ 일시 조회 실패 — 이전 국내배송 상태 유지: {domestic.get('error')}",
+            file=sys.stderr,
+        )
+        domestic = {
+            **prev_domestic,
+            "error": domestic.get("error") or prev_domestic.get("error") or "",
+        }
+
+    curr_customs_fp = customs_fingerprint(cargo) if customs_ok else ""
     curr_domestic_fp = domestic_fingerprint(domestic)
     prev_customs_fp = prev_customs.get("fingerprint", "")
     prev_domestic_fp = prev_domestic.get("fingerprint", "")
 
-    customs_changed = prev_customs_fp != curr_customs_fp
-    domestic_changed = prev_domestic_fp != curr_domestic_fp
-    clearance_done = int(cargo.get("current_stage_index", -1)) >= 7 or "물품반출" in (
-        cargo.get("status") or ""
+    customs_changed = bool(customs_ok and prev_customs_fp != curr_customs_fp)
+    domestic_changed = (not domestic_stale) and prev_domestic_fp != curr_domestic_fp
+    prev_clearance_done = bool(prev.get("clearance_done"))
+    if customs_ok:
+        status_text = cargo.get("status") or ""
+        clearance_done = int(cargo.get("current_stage_index", -1)) >= 7 or any(
+            key in status_text for key in ("물품반출", "반출신고", "반출완료")
+        )
+    else:
+        clearance_done = prev_clearance_done
+
+    # 이미 통관 완료·국내배송 단계면 이후 통관 상세 변동은 알림하지 않음
+    # (완료 직전 마지막 통관 갱신 1회는 prev_clearance_done=False 라서 알림됨)
+    suppress_customs_notify = prev_clearance_done or (
+        clearance_done and _is_meaningful_domestic(prev_domestic)
     )
 
     print(
         json.dumps(
             {
                 "hbl": hbl,
-                "customs_status": cargo.get("status"),
+                "customs_ok": customs_ok,
+                "customs_status": cargo.get("status") if customs_ok else "",
                 "customs_changed": customs_changed,
+                "customs_error": "" if customs_ok else (cargo_obj.error or ""),
                 "cj_invoice": cj_invoice,
                 "domestic_status": domestic.get("status"),
                 "domestic_found": domestic.get("found"),
                 "domestic_changed": domestic_changed,
+                "domestic_stale": domestic_stale,
                 "domestic_error": domestic.get("error") or "",
                 "clearance_done": clearance_done,
+                "suppress_customs_notify": suppress_customs_notify,
             },
             ensure_ascii=False,
         )
@@ -231,22 +299,22 @@ async def main() -> int:
     parts: list[str] = []
     if customs_changed:
         first = not prev_customs_fp
-        if first and not notify_first:
+        if suppress_customs_notify:
+            print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
+        elif first and not notify_first:
             print("통관 첫 스냅샷만 저장 (알림 생략)")
         else:
             parts.append(build_customs_message(cargo, prev_customs.get("status", "")))
 
     if domestic_changed and domestic.get("found"):
-        if not clearance_done:
-            print("통관 진행 중 — 국내배송 카톡 알림 생략")
+        if not _is_meaningful_domestic(domestic):
+            # 미등록/배송준비 스냅샷은 저장만 하고 알림하지 않음
+            print("국내배송 미등록/배송준비 — 카톡 알림 생략")
         else:
-            first_dom = not prev_domestic_fp
-            if first_dom and not notify_first:
-                print("국내배송 첫 스냅샷만 저장 (알림 생략)")
-            else:
-                parts.append(
-                    build_domestic_message(domestic, prev_domestic.get("status", ""))
-                )
+            # 집화 이후 실배송 변화는 FIRST_NOTIFY=0 이어도 알림
+            parts.append(
+                build_domestic_message(domestic, prev_domestic.get("status", ""))
+            )
 
     if parts:
         try:
@@ -258,36 +326,51 @@ async def main() -> int:
         print("변경 없음")
 
     now = datetime.now(timezone.utc).isoformat()
-    state[key] = {
-        "hbl": hbl,
-        "year": cargo.get("year"),
-        "clearance_done": clearance_done,
-        "customs": {
+    customs_section = (
+        {
             "status": cargo.get("status"),
             "product_name": cargo.get("product_name") or "",
             "processed_at": cargo.get("processed_at"),
             "fingerprint": curr_customs_fp,
             "current_stage_index": cargo.get("current_stage_index", -1),
             "stages": cargo.get("stages") or [],
-        },
-        "domestic": {
-            "invoice": domestic.get("invoice") or cj_invoice,
-            "status": domestic.get("status") or "",
-            "processed_at": domestic.get("processed_at") or "",
-            "location": domestic.get("location") or "",
-            "fingerprint": curr_domestic_fp,
-            "found": bool(domestic.get("found")),
-            "error": domestic.get("error") or "",
-            "current_stage_index": domestic.get("current_stage_index", -1),
-            "stages": domestic.get("stages") or [],
-        },
+        }
+        if customs_ok
+        else {
+            "status": prev_customs.get("status", ""),
+            "product_name": prev_customs.get("product_name", ""),
+            "processed_at": prev_customs.get("processed_at", ""),
+            "fingerprint": prev_customs_fp,
+            "current_stage_index": prev_customs.get("current_stage_index", -1),
+            "stages": prev_customs.get("stages") or [],
+            "error": cargo_obj.error or "",
+        }
+    )
+    domestic_section = {
+        "invoice": domestic.get("invoice") or cj_invoice,
+        "status": domestic.get("status") or "",
+        "processed_at": domestic.get("processed_at") or "",
+        "location": domestic.get("location") or "",
+        "fingerprint": curr_domestic_fp if not domestic_stale else prev_domestic_fp,
+        "found": bool(domestic.get("found")),
+        "error": domestic.get("error") or "",
+        "current_stage_index": domestic.get("current_stage_index", -1),
+        "stages": domestic.get("stages") or [],
+    }
+
+    state[key] = {
+        "hbl": hbl,
+        "year": year_key if customs_ok else prev.get("year", year_key),
+        "clearance_done": clearance_done,
+        "customs": customs_section,
+        "domestic": domestic_section,
         # Pages 하위호환: 통관 필드를 루트에도 유지
-        "status": cargo.get("status"),
-        "product_name": cargo.get("product_name") or "",
-        "processed_at": cargo.get("processed_at"),
-        "fingerprint": curr_customs_fp,
-        "current_stage_index": cargo.get("current_stage_index", -1),
-        "stages": cargo.get("stages") or [],
+        "status": customs_section.get("status"),
+        "product_name": customs_section.get("product_name") or "",
+        "processed_at": customs_section.get("processed_at"),
+        "fingerprint": customs_section.get("fingerprint"),
+        "current_stage_index": customs_section.get("current_stage_index", -1),
+        "stages": customs_section.get("stages") or [],
         "updated_at": (
             now
             if customs_changed or domestic_changed
@@ -295,6 +378,13 @@ async def main() -> int:
         ),
     }
     save_state(path, state)
+
+    # 상태 커밋 단계가 실행되도록, 한쪽이라도 처리됐으면 성공 종료.
+    # 양쪽 모두 실패일 때만 non-zero.
+    if not customs_ok and not domestic.get("found") and not domestic_stale:
+        return 1
+    if not customs_ok:
+        print("통관 조회는 실패했지만 국내배송 처리는 완료했습니다.", file=sys.stderr)
     return 0
 
 

@@ -32,6 +32,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Check Unipass and notify Kakao
+        id: notify
         env:
           UNIPASS_API_KEY: ${{ secrets.UNIPASS_API_KEY }}
           TRACK_HBL: ${{ secrets.TRACK_HBL }}
@@ -46,6 +47,7 @@ jobs:
         run: python scripts/check_and_notify.py
 
       - name: Commit state if changed
+        if: always() && steps.notify.outcome != 'skipped'
         run: |
           if [ -n "$(git status --porcelain data/state.json docs/state.json)" ]; then
             git config user.name "github-actions[bot]"
