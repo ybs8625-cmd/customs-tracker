@@ -58,7 +58,8 @@
           "processed_at": "20260807160837",
           "warehouse": "인천세관 지정장치장(특송물류센터)"
         }
-      ]
+      ],
+      "error": "유니패스 연결 실패: ConnectTimeout (cause=ConnectTimeout)"
     },
     "domestic": {
       "invoice": "509799520393",
