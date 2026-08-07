@@ -260,13 +260,20 @@ async def main() -> int:
 
     customs_changed = bool(customs_ok and prev_customs_fp != curr_customs_fp)
     domestic_changed = (not domestic_stale) and prev_domestic_fp != curr_domestic_fp
+    prev_clearance_done = bool(prev.get("clearance_done"))
     if customs_ok:
         status_text = cargo.get("status") or ""
         clearance_done = int(cargo.get("current_stage_index", -1)) >= 7 or any(
             key in status_text for key in ("물품반출", "반출신고", "반출완료")
         )
     else:
-        clearance_done = bool(prev.get("clearance_done"))
+        clearance_done = prev_clearance_done
+
+    # 이미 통관 완료·국내배송 단계면 이후 통관 상세 변동은 알림하지 않음
+    # (완료 직전 마지막 통관 갱신 1회는 prev_clearance_done=False 라서 알림됨)
+    suppress_customs_notify = prev_clearance_done or (
+        clearance_done and _is_meaningful_domestic(prev_domestic)
+    )
 
     print(
         json.dumps(
@@ -283,6 +290,7 @@ async def main() -> int:
                 "domestic_stale": domestic_stale,
                 "domestic_error": domestic.get("error") or "",
                 "clearance_done": clearance_done,
+                "suppress_customs_notify": suppress_customs_notify,
             },
             ensure_ascii=False,
         )
@@ -291,7 +299,9 @@ async def main() -> int:
     parts: list[str] = []
     if customs_changed:
         first = not prev_customs_fp
-        if first and not notify_first:
+        if suppress_customs_notify:
+            print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
+        elif first and not notify_first:
             print("통관 첫 스냅샷만 저장 (알림 생략)")
         else:
             parts.append(build_customs_message(cargo, prev_customs.get("status", "")))
