@@ -131,18 +131,21 @@ function renderDomestic(item, domestic) {
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
   const events = domestic?.events || [];
+  // 상세 이력이 있으면 단계 요약은 숨김 (번호/내용 중복 혼란 방지)
   const detailBlock = events.length
-    ? `${renderDomesticEvents(events)}
-       <p class="label steps-label">단계 요약</p>
-       ${renderStages(domestic?.stages || [])}`
+    ? renderDomesticEvents(events)
     : renderStages(domestic?.stages || []);
+  const loc =
+    domestic?.location ||
+    (events[0] && events[0].location) ||
+    "-";
   card.innerHTML = `
     <p class="label">현재 단계</p>
     <h2 class="status">${escapeHtml(status)}</h2>
     <dl class="meta">
       <div class="row"><dt>송장번호</dt><dd>${escapeHtml(invoice)}</dd></div>
       <div class="row"><dt>품명</dt><dd>${escapeHtml(item.product_name || item.customs?.product_name || "-")}</dd></div>
-      <div class="row"><dt>위치</dt><dd>${escapeHtml(domestic?.location || "-")}</dd></div>
+      <div class="row"><dt>위치</dt><dd>${escapeHtml(loc)}</dd></div>
       <div class="row"><dt>최종갱신</dt><dd>${escapeHtml(when)}</dd></div>
     </dl>
     ${note}

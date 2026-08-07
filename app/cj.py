@@ -18,19 +18,23 @@ _RETRY_DELAYS_SEC = (0.8, 1.5, 3.0)
 STAGE_FLOW = [
     "배송준비",
     "집화",
+    "행낭포장",
     "이동중",
     "배송중",
     "배송완료",
 ]
 
-# CJ crgSt -> 표시 상태
+# CJ crgSt / nsDlvNm -> 표시 상태
 STATUS_BY_CODE = {
     "01": "배송준비",
     "11": "집화",
     "12": "집화",
+    "R1": "행낭포장",
+    "r1": "행낭포장",
     "21": "이동중",
     "41": "이동중",
     "42": "이동중",
+    "43": "이동중",
     "44": "이동중",
     "82": "배송중",
     "84": "배송중",
@@ -85,6 +89,8 @@ def _map_status(code: str, scan_nm: str) -> str:
         ("배송출발", "배송중"),
         ("배달출발", "배송중"),
         ("배송중", "배송중"),
+        ("행낭포장", "행낭포장"),
+        ("행낭", "행낭포장"),
         ("간선", "이동중"),
         ("이동", "이동중"),
         ("도착", "이동중"),
@@ -218,8 +224,10 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
         payload = detail.json()
 
     detail_map = payload.get("parcelDetailResultMap") or {}
+    summary_map = payload.get("parcelResultMap") or {}
     events_raw = detail_map.get("resultList") or []
-    if not events_raw:
+    summary_rows = summary_map.get("resultList") or []
+    if not events_raw and not summary_rows:
         # 미등록/준비중
         return CjTrack(
             found=True,
@@ -244,10 +252,56 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
                 processed_at=str(row.get("dTime") or ""),
                 location=str(row.get("regBranNm") or ""),
                 status_code=code,
-                raw_status=scan,
+                raw_status=scan or stage,
                 note=str(row.get("crgNm") or "").strip(),
             )
         )
+
+    # 요약의 nsDlvNm(예: R1=행낭포장)은 상세 resultList에 빠진 경우가 많음 → 보강
+    summary = summary_rows[0] if summary_rows else {}
+    ns_code = str(summary.get("nsDlvNm") or "").strip()
+    if ns_code:
+        ns_stage = _map_status(ns_code, ns_code)
+        ns_label = STATUS_BY_CODE.get(ns_code) or STATUS_BY_CODE.get(ns_code.upper()) or ns_stage
+        already = any(
+            (ev.status_code or "").upper() == ns_code.upper()
+            or ev.raw_status == ns_label
+            or ev.stage == ns_stage
+            for ev in events
+        )
+        if not already and ns_stage:
+            anchor_time = events[-1].processed_at if events else ""
+            events.append(
+                CjEvent(
+                    stage=ns_stage if ns_stage in STAGE_INDEX else "행낭포장",
+                    processed_at=anchor_time,
+                    location="",
+                    status_code=ns_code.upper(),
+                    raw_status=ns_label,
+                    note="",
+                )
+            )
+
+    if not events:
+        return CjTrack(
+            found=True,
+            invoice=str(detail_map.get("paramInvcNo") or summary.get("invcNo") or inv),
+            status="배송준비",
+            processed_at="",
+            location="",
+            events=[],
+            current_stage_index=0,
+            stages=_build_stages(0, []),
+            error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
+        )
+
+    # 같은 시각이면 단계 index가 큰 쪽이 더 최신
+    events.sort(
+        key=lambda ev: (
+            ev.processed_at or "",
+            STAGE_INDEX.get(ev.stage, -1),
+        )
+    )
 
     latest = events[-1]
     current_idx = max(
@@ -262,10 +316,14 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
 
     return CjTrack(
         found=True,
-        invoice=str(detail_map.get("paramInvcNo") or inv),
+        invoice=str(
+            detail_map.get("paramInvcNo")
+            or summary.get("invcNo")
+            or inv
+        ),
         status=status,
         processed_at=latest.processed_at,
-        location=latest.location,
+        location=latest.location or (events[-2].location if len(events) > 1 else ""),
         events=list(reversed(events)),  # 최신 먼저
         current_stage_index=current_idx,
         stages=_build_stages(current_idx, events),
