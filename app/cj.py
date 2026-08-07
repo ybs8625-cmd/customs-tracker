@@ -73,6 +73,10 @@ SCAN_ORDER = {
     "91": 11,
 }
 
+# 상세 resultList에 거의 안 오고 요약 nsDlvNm으로만 오는 코드만 이력에 보강
+# (41 등은 현재상태 코드일 뿐 스캔 행이 아니라서 이력에 넣지 않음)
+SUMMARY_HISTORY_CODES = {"R1"}
+
 STAGE_INDEX = {name: i for i, name in enumerate(STAGE_FLOW)}
 
 
@@ -309,11 +313,11 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
             )
         )
 
-    # 요약 nsDlvNm(R1/41 등)은 상세에 없는 경우가 많음 → 코드 기준으로만 보강
-    # (같은 '이동중'이라도 간선상차≠간선하차 이므로 stage 일치로는 스킵하지 않음)
+    # 요약 nsDlvNm: R1(행낭포장)처럼 상세에 안 오는 것만 이력 보강.
+    # 41/44 등은 현재상태 코드라서 같은 시각·빈 위치 가짜 행을 만들지 않음.
     summary = summary_rows[0] if summary_rows else {}
     ns_code = _norm_code(str(summary.get("nsDlvNm") or ""))
-    if ns_code:
+    if ns_code in SUMMARY_HISTORY_CODES:
         already = any(_norm_code(ev.status_code) == ns_code for ev in events)
         if not already:
             ns_label = _scan_label(ns_code, "")
@@ -357,8 +361,11 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
         (STAGE_INDEX[ev.stage] for ev in events if ev.stage in STAGE_INDEX),
         default=0,
     )
-    # 화면/알림 현재상태는 상세 스캔명 (간선하차 등)
+    # 현재상태 = 이력에 있는 최신 실스캔명 (가짜 요약행과 어긋나지 않게)
     status = latest.raw_status or latest.stage
+    status_location = latest.location or (
+        events[-2].location if len(events) > 1 else ""
+    )
     stage_for_idx = latest.stage if latest.stage in STAGE_INDEX else _map_status(
         latest.status_code, latest.raw_status
     )
@@ -374,7 +381,7 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
         ),
         status=status,
         processed_at=latest.processed_at,
-        location=latest.location or (events[-2].location if len(events) > 1 else ""),
+        location=status_location,
         events=list(reversed(events)),  # 최신 먼저
         current_stage_index=current_idx,
         stages=_build_stages(current_idx, events),

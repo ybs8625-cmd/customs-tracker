@@ -103,16 +103,27 @@ def _domestic_event_soft_key(ev: dict) -> tuple[str, str, str]:
     )
 
 
+def _is_phantom_hub_event(ev: dict) -> bool:
+    """요약코드로 만들어진 빈 위치 간선 행(가짜 간선하차 등) 제거."""
+    code = str(ev.get("status_code") or "").upper()
+    loc = str(ev.get("location") or "").strip()
+    if code in {"21", "41", "42", "43", "44"} and not loc:
+        return True
+    return False
+
+
 def merge_domestic_events(
     prev_events: list | None,
     curr_events: list | None,
 ) -> list[dict]:
     """CJ가 예전 스캔을 빼도 이전 state 이력을 누적 보존 (최신 먼저)."""
-    from app.cj import STAGE_INDEX
+    from app.cj import SCAN_ORDER, STAGE_INDEX
 
     merged: dict[tuple[str, str, str], dict] = {}
     for ev in list(prev_events or []) + list(curr_events or []):
         if not isinstance(ev, dict):
+            continue
+        if _is_phantom_hub_event(ev):
             continue
         key = _domestic_event_soft_key(ev)
         if not any(key):
@@ -143,6 +154,7 @@ def merge_domestic_events(
     events.sort(
         key=lambda ev: (
             str(ev.get("processed_at") or ""),
+            SCAN_ORDER.get(str(ev.get("status_code") or "").upper(), 50),
             STAGE_INDEX.get(str(ev.get("stage") or ""), -1),
         )
     )
