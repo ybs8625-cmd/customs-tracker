@@ -58,15 +58,14 @@
           "processed_at": "20260807160837",
           "warehouse": "인천세관 지정장치장(특송물류센터)"
         }
-      ],
-      "error": "유니패스 연결 실패: ConnectTimeout (cause=ConnectTimeout)"
+      ]
     },
     "domestic": {
       "invoice": "509799520393",
       "status": "집화",
       "processed_at": "2026-08-07 16:14:18",
       "location": "[집화]코어물류",
-      "fingerprint": "509799520393|집화|2026-08-07 16:14:18|집화|2026-08-07 16:14:18",
+      "fingerprint": "509799520393|집화|2026-08-07 16:14:18|1|11|집화처리|2026-08-07 16:14:18|[집화]코어물류",
       "found": true,
       "error": "",
       "current_stage_index": 1,
@@ -100,6 +99,16 @@
           "state": "pending",
           "processed_at": "",
           "location": ""
+        }
+      ],
+      "events": [
+        {
+          "stage": "집화",
+          "processed_at": "2026-08-07 16:14:18",
+          "location": "[집화]코어물류",
+          "status_code": "11",
+          "raw_status": "집화처리",
+          "note": "보내시는 고객님으로부터 상품을 인수받았습니다"
         }
       ]
     },
@@ -158,6 +167,6 @@
         "warehouse": "인천세관 지정장치장(특송물류센터)"
       }
     ],
-    "updated_at": "2026-08-07T09:47:15.868719+00:00"
+    "updated_at": "2026-08-07T10:12:50.375433+00:00"
   }
 }
