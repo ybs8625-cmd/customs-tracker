@@ -17,6 +17,20 @@ function formatProcessedAt(raw) {
   return text;
 }
 
+/** 네이버 배송조회 스타일: 08. 07. (금) 20:45 */
+function formatNaverWhen(raw) {
+  const text = formatProcessedAt(raw);
+  const m = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?/
+  );
+  if (!m) return text;
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const dt = new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00`);
+  const wd = Number.isNaN(dt.getTime()) ? "" : weekdays[dt.getDay()];
+  const dayPart = wd ? `${m[2]}. ${m[3]}. (${wd})` : `${m[2]}. ${m[3]}.`;
+  return `${dayPart} ${m[4]}:${m[5]}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -86,13 +100,13 @@ function renderDomesticEvents(events) {
     return "";
   }
 
-  // 표출: 최신이 위(기존 유지). 번호: 아래(과거)가 1
+  // 네이버처럼 최신이 위. 번호: 아래(과거)가 1
   const total = events.length;
   const html = events
     .map((ev, idx) => {
       const name = ev.raw_status || ev.stage || "-";
-      const when = formatProcessedAt(ev.processed_at) || "";
-      const loc = ev.location ? ` · ${ev.location}` : "";
+      const when = formatNaverWhen(ev.processed_at) || "";
+      const loc = String(ev.location || "").trim() || "-";
       const note = ev.note ? `<div class="ev-note">${escapeHtml(ev.note)}</div>` : "";
       const state = idx === 0 ? "current" : "done";
       const num = total - idx;
@@ -101,7 +115,7 @@ function renderDomesticEvents(events) {
           <div class="n">${num}</div>
           <div class="body">
             <div class="name">${escapeHtml(name)}</div>
-            <div class="when">${escapeHtml(when)}${escapeHtml(loc)}</div>
+            <div class="when">${escapeHtml(loc)} · ${escapeHtml(when)}</div>
             ${note}
           </div>
         </div>
@@ -129,28 +143,30 @@ function renderCustoms(item, customs) {
 
 function renderDomestic(item, domestic) {
   if (pageTitle) pageTitle.textContent = "국내배송 진행상태";
-  if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력입니다.";
+  if (pageSub) pageSub.textContent = "네이버와 같은 CJ 상세 스캔 이력입니다.";
   const events = domestic?.events || [];
   const latest = events[0] || {};
-  // 현재단계 = CJ 요약상태(nsDlvNm). 이력 최신 스캔명과 다를 수 있음(예: 간선하차 vs 간선상차).
+  // 네이버와 동일: 현재단계 = 최신 상세 스캔
   const status =
-    domestic?.status ||
     latest.raw_status ||
+    domestic?.status ||
     latest.stage ||
     "배송준비";
   const invoice = domestic?.invoice || item.hbl || "-";
-  const when = formatProcessedAt(domestic?.processed_at || latest.processed_at) || "-";
+  const when =
+    formatNaverWhen(latest.processed_at || domestic?.processed_at) || "-";
   const note = domestic?.error
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
   const detailBlock = events.length
     ? renderDomesticEvents(events)
     : `<p class="muted">아직 배송 이력이 없습니다.</p>`;
-  const loc = domestic?.location || latest.location || "-";
+  const loc = latest.location || domestic?.location || "-";
   card.innerHTML = `
     <p class="label">현재 단계</p>
     <h2 class="status">${escapeHtml(status)}</h2>
     <dl class="meta">
+      <div class="row"><dt>택배사</dt><dd>CJ대한통운</dd></div>
       <div class="row"><dt>송장번호</dt><dd>${escapeHtml(invoice)}</dd></div>
       <div class="row"><dt>품명</dt><dd>${escapeHtml(item.product_name || item.customs?.product_name || "-")}</dd></div>
       <div class="row"><dt>위치</dt><dd>${escapeHtml(loc)}</dd></div>

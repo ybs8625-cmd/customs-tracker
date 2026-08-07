@@ -1,4 +1,9 @@
-"""CJ대한통운 공식 배송조회 (웹 endpoint)."""
+"""CJ대한통운 배송조회.
+
+네이버페이/네이버 검색과 동일한 상세 스캔을 쓰기 위해
+trace.cjlogistics.com/next API를 우선 조회하고,
+실패 시 www.cjlogistics.com 웹조회를 폴백한다.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,15 @@ from typing import Any
 
 import httpx
 
+# 네이버가 링크하는 CJ 신규 추적 (상세 스캔 전부 포함)
+TRACE_PAGE = "https://trace.cjlogistics.com/next/tracking.html"
+TRACE_WAYBILL = "https://trace.cjlogistics.com/next/rest/selectTrackingWaybil.do"
+TRACE_DETAIL = "https://trace.cjlogistics.com/next/rest/selectTrackingDetailList.do"
+
+# 구 웹조회 폴백
 TRACKING_PAGE = "https://www.cjlogistics.com/ko/tool/parcel/tracking"
 TRACKING_DETAIL = "https://www.cjlogistics.com/ko/tool/parcel/tracking-detail"
+
 _MAX_ATTEMPTS = 4
 _RETRY_DELAYS_SEC = (0.8, 1.5, 3.0)
 
@@ -24,7 +36,7 @@ STAGE_FLOW = [
     "배송완료",
 ]
 
-# CJ crgSt / nsDlvNm -> 큰 단계(집화/이동중…)
+# CJ 코드 -> 큰 단계(집화/이동중…) — 코드는 API마다 다를 수 있어 이름 매핑 우선
 STATUS_BY_CODE = {
     "01": "배송준비",
     "11": "집화",
@@ -41,14 +53,14 @@ STATUS_BY_CODE = {
     "91": "배송완료",
 }
 
-# CJ 코드 -> 상세 스캔명 (간선상차/하차 등 그대로 표기)
+# 코드 폴백 라벨 (next API는 crgStDnm을 반드시 우선)
 SCAN_LABEL_BY_CODE = {
     "01": "배송준비",
     "11": "집화처리",
     "12": "집화처리",
     "R1": "행낭포장",
     "21": "SM입고",
-    "41": "간선하차",
+    "41": "간선상차",  # next API 기준 (www 구API는 44=상차)
     "42": "간선하차",
     "43": "간선이동중",
     "44": "간선상차",
@@ -57,20 +69,34 @@ SCAN_LABEL_BY_CODE = {
     "91": "배송완료",
 }
 
-# 같은 시각일 때 상세 스캔 순서
+# 같은 시각일 때 스캔명 순서 (네이버 타임라인과 동일하게 하차→상차)
+SCAN_NAME_ORDER = {
+    "배송준비": 1,
+    "집화처리": 2,
+    "행낭포장": 3,
+    "SM입고": 4,
+    "간선하차": 5,
+    "간선이동중": 6,
+    "간선상차": 7,
+    "배송출발": 8,
+    "배송중": 9,
+    "배송완료": 10,
+}
+
+# 코드 폴백 순서
 SCAN_ORDER = {
     "01": 1,
     "11": 2,
     "12": 2,
     "R1": 3,
     "21": 4,
-    "44": 5,
+    "42": 5,
     "43": 6,
-    "42": 7,
-    "41": 8,
-    "82": 9,
-    "84": 10,
-    "91": 11,
+    "41": 7,
+    "44": 7,
+    "82": 8,
+    "84": 9,
+    "91": 10,
 }
 
 STAGE_INDEX = {name: i for i, name in enumerate(STAGE_FLOW)}
@@ -112,7 +138,7 @@ def _norm_code(code: str) -> str:
 
 
 def _scan_label(code: str, scan_nm: str = "") -> str:
-    """상세 표기명: scanNm 우선, 없으면 코드 라벨."""
+    """상세 표기명: 스캔명 우선, 없으면 코드 라벨."""
     text = (scan_nm or "").strip()
     if text:
         return text
@@ -121,12 +147,8 @@ def _scan_label(code: str, scan_nm: str = "") -> str:
 
 
 def _map_status(code: str, scan_nm: str) -> str:
-    code_key = _norm_code(code)
-    if code_key in STATUS_BY_CODE:
-        return STATUS_BY_CODE[code_key]
-    if code in STATUS_BY_CODE:
-        return STATUS_BY_CODE[code]
     text = (scan_nm or "").strip()
+    # 스캔명 우선 (next API에서 코드 41이 간선상차인 경우 등)
     for name in STAGE_FLOW:
         if name in text:
             return name
@@ -153,7 +175,22 @@ def _map_status(code: str, scan_nm: str) -> str:
     for key, mapped in aliases:
         if key in text:
             return mapped
+    code_key = _norm_code(code)
+    if code_key in STATUS_BY_CODE:
+        return STATUS_BY_CODE[code_key]
+    if code in STATUS_BY_CODE:
+        return STATUS_BY_CODE[code]
     return text or "배송준비"
+
+
+def _event_sort_key(ev: CjEvent) -> tuple:
+    name = (ev.raw_status or "").strip()
+    code = _norm_code(ev.status_code)
+    return (
+        ev.processed_at or "",
+        SCAN_NAME_ORDER.get(name, SCAN_ORDER.get(code, 50)),
+        STAGE_INDEX.get(ev.stage, -1),
+    )
 
 
 def _build_stages(current_index: int, events: list[CjEvent]) -> list[dict[str, Any]]:
@@ -162,7 +199,6 @@ def _build_stages(current_index: int, events: list[CjEvent]) -> list[dict[str, A
         idx = STAGE_INDEX.get(ev.stage)
         if idx is None:
             continue
-        # 같은 단계는 최초 시각 유지
         if ev.stage not in event_by_stage:
             event_by_stage[ev.stage] = ev
 
@@ -231,7 +267,138 @@ def _is_transient_error(exc: BaseException) -> bool:
     return False
 
 
-async def _fetch_cj_once(inv: str) -> CjTrack:
+def _finalize_events(
+    inv: str,
+    events: list[CjEvent],
+    *,
+    source: str,
+) -> CjTrack:
+    if not events:
+        return CjTrack(
+            found=True,
+            invoice=inv,
+            status="배송준비",
+            processed_at="",
+            location="",
+            events=[],
+            current_stage_index=0,
+            stages=_build_stages(0, []),
+            error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
+            source=source,
+        )
+
+    events.sort(key=_event_sort_key)
+    latest = events[-1]
+    current_idx = max(
+        (STAGE_INDEX[ev.stage] for ev in events if ev.stage in STAGE_INDEX),
+        default=0,
+    )
+    # 네이버와 동일: 현재상태 = 최신 상세 스캔명
+    status = latest.raw_status or latest.stage
+    stage_for_idx = (
+        latest.stage
+        if latest.stage in STAGE_INDEX
+        else _map_status(latest.status_code, latest.raw_status)
+    )
+    if stage_for_idx in STAGE_INDEX:
+        current_idx = max(current_idx, STAGE_INDEX[stage_for_idx])
+
+    return CjTrack(
+        found=True,
+        invoice=inv,
+        status=status,
+        processed_at=latest.processed_at,
+        location=latest.location,
+        events=list(reversed(events)),  # 최신 먼저
+        current_stage_index=current_idx,
+        stages=_build_stages(current_idx, events),
+        source=source,
+    )
+
+
+async def _fetch_cj_next_once(inv: str) -> CjTrack:
+    """네이버가 쓰는 CJ next 추적 API (상세 스캔 전체)."""
+    timeout = httpx.Timeout(30.0, connect=20.0)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Origin": "https://trace.cjlogistics.com",
+        "Referer": f"{TRACE_PAGE}?wblNo={inv}",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        headers={
+            "User-Agent": headers["User-Agent"],
+            "Accept-Language": headers["Accept-Language"],
+        },
+        follow_redirects=True,
+        http2=False,
+    ) as client:
+        # 세션/쿠키
+        await client.get(f"{TRACE_PAGE}?wblNo={inv}")
+        detail = await client.post(
+            TRACE_DETAIL,
+            data={"wblNo": inv},
+            headers=headers,
+        )
+        detail.raise_for_status()
+        payload = detail.json()
+
+    if int(payload.get("resultCode") or 0) != 200:
+        return CjTrack(
+            found=False,
+            invoice=inv,
+            error=f"CJ next 조회 실패: {payload.get('resultMessage') or payload.get('resultCode')}",
+            source="cj-next",
+        )
+
+    data = payload.get("data") or {}
+    rows = data.get("svcOutList") or []
+    if not rows:
+        return CjTrack(
+            found=True,
+            invoice=inv,
+            status="배송준비",
+            events=[],
+            current_stage_index=0,
+            stages=_build_stages(0, []),
+            error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
+            source="cj-next",
+        )
+
+    events: list[CjEvent] = []
+    for row in rows:
+        code = str(row.get("crgStDcd") or "")
+        scan = str(row.get("crgStDnm") or "")
+        label = _scan_label(code, scan)
+        stage = _map_status(code, label)
+        work_dt = str(row.get("workDt") or "").strip()
+        work_hms = str(row.get("workHms") or "").strip()
+        processed_at = f"{work_dt} {work_hms}".strip()
+        events.append(
+            CjEvent(
+                stage=stage,
+                processed_at=processed_at,
+                location=str(row.get("branNm") or "").strip(),
+                status_code=_norm_code(code) or code,
+                raw_status=label,
+                note=str(row.get("crgStDcdVal") or "").strip(),
+            )
+        )
+
+    return _finalize_events(inv, events, source="cj-next")
+
+
+async def _fetch_cj_www_once(inv: str) -> CjTrack:
+    """구 www 웹조회 폴백 (상세가 줄어든 경우가 많음)."""
     timeout = httpx.Timeout(30.0, connect=20.0)
     headers = {
         "User-Agent": (
@@ -257,6 +424,7 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
                 found=False,
                 invoice=inv,
                 error="CJ CSRF 토큰을 찾지 못했습니다.",
+                source="cj-www",
             )
 
         detail = await client.post(
@@ -279,17 +447,15 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
     events_raw = detail_map.get("resultList") or []
     summary_rows = summary_map.get("resultList") or []
     if not events_raw and not summary_rows:
-        # 미등록/준비중
         return CjTrack(
             found=True,
             invoice=inv,
             status="배송준비",
-            processed_at="",
-            location="",
             events=[],
             current_stage_index=0,
             stages=_build_stages(0, []),
             error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
+            source="cj-www",
         )
 
     events: list[CjEvent] = []
@@ -309,87 +475,28 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
             )
         )
 
-    # 요약 nsDlvNm은 "현재 상태"로만 사용. 이력(resultList)에 넣지 않음.
-    # (넣으면 같은 시각·빈 위치의 가짜 간선하차 행이 생겨 3·4번이 이상해 보임)
-    summary = summary_rows[0] if summary_rows else {}
-    ns_code = _norm_code(str(summary.get("nsDlvNm") or ""))
-
-    if not events:
-        # 상세 스캔은 없고 요약 상태만 있는 경우
-        if ns_code:
-            ns_label = _scan_label(ns_code, "")
-            ns_stage = _map_status(ns_code, ns_label)
-            current_idx = STAGE_INDEX.get(ns_stage, 0)
-            return CjTrack(
-                found=True,
-                invoice=str(
-                    detail_map.get("paramInvcNo") or summary.get("invcNo") or inv
-                ),
-                status=ns_label,
-                processed_at="",
-                location="",
-                events=[],
-                current_stage_index=current_idx,
-                stages=_build_stages(current_idx, []),
-            )
-        return CjTrack(
-            found=True,
-            invoice=str(detail_map.get("paramInvcNo") or summary.get("invcNo") or inv),
-            status="배송준비",
-            processed_at="",
-            location="",
-            events=[],
-            current_stage_index=0,
-            stages=_build_stages(0, []),
-            error="운송장이 아직 등록되지 않았거나 배송준비 중입니다.",
-        )
-
-    # 시간 → 상세 스캔 순서 → 단계 index
-    events.sort(
-        key=lambda ev: (
-            ev.processed_at or "",
-            SCAN_ORDER.get(_norm_code(ev.status_code), 50),
-            STAGE_INDEX.get(ev.stage, -1),
-        )
+    track = _finalize_events(
+        str(detail_map.get("paramInvcNo") or inv),
+        events,
+        source="cj-www",
     )
+    return track
 
-    latest = events[-1]
-    current_idx = max(
-        (STAGE_INDEX[ev.stage] for ev in events if ev.stage in STAGE_INDEX),
-        default=0,
-    )
-    # 현재상태 = 요약 nsDlvNm(CJ/네이버와 동일). 없으면 최신 실스캔.
-    if ns_code:
-        status = _scan_label(ns_code, "")
-        stage_for_idx = _map_status(ns_code, status)
-    else:
-        status = latest.raw_status or latest.stage
-        stage_for_idx = (
-            latest.stage
-            if latest.stage in STAGE_INDEX
-            else _map_status(latest.status_code, latest.raw_status)
-        )
-    if stage_for_idx in STAGE_INDEX:
-        current_idx = max(current_idx, STAGE_INDEX[stage_for_idx])
 
-    status_location = latest.location or (
-        events[-2].location if len(events) > 1 else ""
-    )
+async def _fetch_cj_once(inv: str) -> CjTrack:
+    # 1순위: 네이버와 같은 next 상세 API
+    try:
+        track = await _fetch_cj_next_once(inv)
+        if track.found and track.events:
+            return track
+        if track.found and not track.events:
+            # 미등록이면 www도 같은 결과일 가능성 높음 → 그대로
+            return track
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        track = None
 
-    return CjTrack(
-        found=True,
-        invoice=str(
-            detail_map.get("paramInvcNo")
-            or summary.get("invcNo")
-            or inv
-        ),
-        status=status,
-        processed_at=latest.processed_at,
-        location=status_location,
-        events=list(reversed(events)),  # 최신 먼저
-        current_stage_index=current_idx,
-        stages=_build_stages(current_idx, events),
-    )
+    # 2순위: www 폴백
+    return await _fetch_cj_www_once(inv)
 
 
 async def fetch_cj_tracking(invoice: str) -> CjTrack:
@@ -407,14 +514,15 @@ async def fetch_cj_tracking(invoice: str) -> CjTrack:
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             track = await _fetch_cj_once(inv)
-            # CSRF 미검출도 재시도 (간헐적 HTML 차단/리셋)
             if (
                 not track.found
                 and "CSRF" in (track.error or "")
                 and attempt < _MAX_ATTEMPTS
             ):
                 last_error = track.error
-                await asyncio.sleep(_RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)])
+                await asyncio.sleep(
+                    _RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)]
+                )
                 continue
             if attempt > 1 and track.found:
                 track.error = (track.error or "").strip()

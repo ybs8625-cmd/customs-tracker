@@ -95,11 +95,11 @@ def customs_fingerprint(cargo: dict) -> str:
 
 
 def _domestic_event_soft_key(ev: dict) -> tuple[str, str, str]:
-    """같은 스캔을 location 유무와 무관하게 묶기 위한 키."""
+    """같은 스캔을 API 코드 차이(41/44 등)와 무관하게 묶기 위한 키."""
     return (
-        str(ev.get("status_code") or "").upper(),
         str(ev.get("raw_status") or ev.get("stage") or ""),
         str(ev.get("processed_at") or ""),
+        str(ev.get("location") or ""),
     )
 
 
@@ -121,15 +121,11 @@ def merge_domestic_events(
     prev_events: list | None,
     curr_events: list | None,
 ) -> list[dict]:
-    """CJ 상세 스캔(resultList)만 누적 보존. 요약 nsDlvNm 가짜 행은 제외."""
-    from app.cj import SCAN_ORDER, STAGE_INDEX
+    """CJ 상세 스캔만 누적 보존. 요약으로 만든 빈 위치 가짜 행은 제외."""
+    from app.cj import SCAN_NAME_ORDER, SCAN_ORDER, STAGE_INDEX
 
     curr_list = [ev for ev in list(curr_events or []) if isinstance(ev, dict)]
-    curr_codes = {
-        str(ev.get("status_code") or "").upper()
-        for ev in curr_list
-        if ev.get("status_code")
-    }
+    curr_keys = {_domestic_event_soft_key(ev) for ev in curr_list}
 
     merged: dict[tuple[str, str, str], dict] = {}
     for ev in list(prev_events or []) + curr_list:
@@ -137,15 +133,11 @@ def merge_domestic_events(
             continue
         if _is_phantom_hub_event(ev):
             continue
-        code = str(ev.get("status_code") or "").upper()
         loc = str(ev.get("location") or "").strip()
-        # 요약으로만 있던 R1 등은 현재 상세에 없으면 이력에서 제거
-        if code == "R1" and code not in curr_codes:
-            continue
-        # 위치가 없는 이전 행은 상세 스캔이 아닐 가능성이 큼 → 현재 상세에 있을 때만
-        if not loc and code not in curr_codes:
-            continue
         key = _domestic_event_soft_key(ev)
+        # 위치 없는 이전 행은 현재 상세에 있을 때만 유지
+        if not loc and key not in curr_keys:
+            continue
         if not any(key):
             continue
         old = merged.get(key)
@@ -159,7 +151,6 @@ def merge_domestic_events(
                 "note": ev.get("note") or "",
             }
             continue
-        # 더 풍부한 필드 우선
         if not old.get("location") and ev.get("location"):
             old["location"] = ev.get("location") or ""
         if not old.get("note") and ev.get("note"):
@@ -174,7 +165,10 @@ def merge_domestic_events(
     events.sort(
         key=lambda ev: (
             str(ev.get("processed_at") or ""),
-            SCAN_ORDER.get(str(ev.get("status_code") or "").upper(), 50),
+            SCAN_NAME_ORDER.get(
+                str(ev.get("raw_status") or ""),
+                SCAN_ORDER.get(str(ev.get("status_code") or "").upper(), 50),
+            ),
             STAGE_INDEX.get(str(ev.get("stage") or ""), -1),
         )
     )
