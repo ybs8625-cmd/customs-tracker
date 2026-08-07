@@ -47,6 +47,7 @@ class CjEvent:
     location: str = ""
     status_code: str = ""
     raw_status: str = ""
+    note: str = ""
 
 
 @dataclass
@@ -244,6 +245,7 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
                 location=str(row.get("regBranNm") or ""),
                 status_code=code,
                 raw_status=scan,
+                note=str(row.get("crgNm") or "").strip(),
             )
         )
 

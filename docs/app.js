@@ -78,6 +78,34 @@ function renderStages(stages) {
   return `<div class="timeline">${rows}</div>`;
 }
 
+function renderDomesticEvents(events) {
+  if (!Array.isArray(events) || !events.length) {
+    return "";
+  }
+
+  const rows = events
+    .map((ev, idx) => {
+      const name = ev.raw_status || ev.stage || "-";
+      const when = formatProcessedAt(ev.processed_at) || "";
+      const loc = ev.location ? ` · ${ev.location}` : "";
+      const note = ev.note ? `<div class="ev-note">${escapeHtml(ev.note)}</div>` : "";
+      const state = idx === 0 ? "current" : "done";
+      return `
+        <div class="stage ${state}">
+          <div class="n">${idx + 1}</div>
+          <div class="body">
+            <div class="name">${escapeHtml(name)}</div>
+            <div class="when">${escapeHtml(when)}${escapeHtml(loc)}</div>
+            ${note}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `<div class="timeline">${rows}</div>`;
+}
+
 function renderCustoms(item, customs) {
   if (pageTitle) pageTitle.textContent = "통관 진행상태";
   if (pageSub) pageSub.textContent = "GitHub Actions가 저장한 최신 통관 스냅샷입니다.";
@@ -95,12 +123,19 @@ function renderCustoms(item, customs) {
 
 function renderDomestic(item, domestic) {
   if (pageTitle) pageTitle.textContent = "국내배송 진행상태";
-  if (pageSub) pageSub.textContent = "통관 완료 후 CJ대한통운 배송 단계입니다.";
+  if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력을 시간순으로 표시합니다.";
   const status = domestic?.status || "배송준비";
   const invoice = domestic?.invoice || item.hbl || "-";
+  const when = formatProcessedAt(domestic?.processed_at) || "-";
   const note = domestic?.error
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
+  const events = domestic?.events || [];
+  const detailBlock = events.length
+    ? `${renderDomesticEvents(events)}
+       <p class="label steps-label">단계 요약</p>
+       ${renderStages(domestic?.stages || [])}`
+    : renderStages(domestic?.stages || []);
   card.innerHTML = `
     <p class="label">현재 단계</p>
     <h2 class="status">${escapeHtml(status)}</h2>
@@ -108,10 +143,11 @@ function renderDomestic(item, domestic) {
       <div class="row"><dt>송장번호</dt><dd>${escapeHtml(invoice)}</dd></div>
       <div class="row"><dt>품명</dt><dd>${escapeHtml(item.product_name || item.customs?.product_name || "-")}</dd></div>
       <div class="row"><dt>위치</dt><dd>${escapeHtml(domestic?.location || "-")}</dd></div>
+      <div class="row"><dt>최종갱신</dt><dd>${escapeHtml(when)}</dd></div>
     </dl>
     ${note}
-    <p class="label steps-label">국내배송 진행</p>
-    ${renderStages(domestic?.stages || [])}
+    <p class="label steps-label">배송 상세 이력</p>
+    ${detailBlock}
   `;
 }
 

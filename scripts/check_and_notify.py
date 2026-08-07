@@ -95,18 +95,46 @@ def customs_fingerprint(cargo: dict) -> str:
 
 
 def domestic_fingerprint(track: dict) -> str:
-    latest = ""
+    """모든 스캔 이벤트를 포함해 중간 이동(동일 단계)도 변경으로 감지."""
     events = track.get("events") or []
-    if events:
-        latest = f"{events[0].get('stage','')}|{events[0].get('processed_at','')}"
+    event_bits = [
+        "|".join(
+            [
+                str(ev.get("status_code") or ""),
+                str(ev.get("raw_status") or ev.get("stage") or ""),
+                str(ev.get("processed_at") or ""),
+                str(ev.get("location") or ""),
+            ]
+        )
+        for ev in events
+    ]
     return "|".join(
         [
             track.get("invoice") or "",
             track.get("status") or "",
             track.get("processed_at") or "",
-            latest,
+            str(len(events)),
+            *event_bits,
         ]
     )
+
+
+def _compact_when(raw: str) -> str:
+    """yyyy-MM-dd HH:mm:ss -> MM-dd HH:mm (카톡 길이 절약)."""
+    text = format_processed_at(raw)
+    if len(text) >= 16 and text[4] == "-" and text[10] == " ":
+        return f"{text[5:10]} {text[11:16]}"
+    return text
+
+
+def _event_line(ev: dict) -> str:
+    when = _compact_when(str(ev.get("processed_at") or ""))
+    label = (ev.get("raw_status") or ev.get("stage") or "-").strip()
+    loc = (ev.get("location") or "").strip()
+    # "[집화]코어물류" -> "코어물류"
+    loc = loc.replace("[집화]", "").replace("[", "").replace("]", "").strip()
+    parts = [p for p in (when, label, loc) if p]
+    return " · ".join(parts)
 
 
 def build_customs_message(cargo: dict, prev_status: str) -> str:
@@ -127,23 +155,68 @@ def build_customs_message(cargo: dict, prev_status: str) -> str:
     return "\n".join(lines)
 
 
-def build_domestic_message(track: dict, prev_status: str) -> str:
+def build_domestic_message(
+    track: dict,
+    prev_status: str,
+    *,
+    prev_events: list | None = None,
+) -> str:
+    """최신 변화 + 진행 이력(시간)을 카톡 200자 안에 최대한 담음."""
     invoice = track.get("invoice") or ""
     status = track.get("status") or "-"
-    when = format_processed_at(track.get("processed_at") or "")
-    location = (track.get("location") or "").strip()
-    lines = [
-        "[국내배송 업데이트 알림]",
-        f"송장번호 - {invoice}",
-        f"{prev_status or '-'} -> {status}",
+    events = list(track.get("events") or [])
+    prev_events = list(prev_events or [])
+    prev_keys = {
+        (
+            str(ev.get("status_code") or ""),
+            str(ev.get("raw_status") or ev.get("stage") or ""),
+            str(ev.get("processed_at") or ""),
+            str(ev.get("location") or ""),
+        )
+        for ev in prev_events
+    }
+    new_events = [
+        ev
+        for ev in events
+        if (
+            str(ev.get("status_code") or ""),
+            str(ev.get("raw_status") or ev.get("stage") or ""),
+            str(ev.get("processed_at") or ""),
+            str(ev.get("location") or ""),
+        )
+        not in prev_keys
     ]
-    if when and when != "-":
-        lines.append(f"변경일자 {when}")
-    if location:
-        lines.append(f"위치 {location}")
-    if PUBLIC_PAGE_URL:
-        lines.append(f"바로조회 {PUBLIC_PAGE_URL}")
-    return "\n".join(lines)
+
+    header = [
+        "[국내배송 업데이트]",
+        f"송장 {invoice}",
+        f"{prev_status or '-'} → {status}",
+    ]
+    footer = [f"바로조회 {PUBLIC_PAGE_URL}"] if PUBLIC_PAGE_URL else []
+
+    if new_events:
+        # 신규 스캔을 위에, 이어서 최근 이력
+        older = [ev for ev in events if ev not in new_events]
+        history_source = list(new_events) + older
+    else:
+        history_source = events
+    history_lines: list[str] = []
+    for ev in history_source[:8]:
+        line = _event_line(ev)
+        if line:
+            prefix = "+" if new_events and ev in new_events else "·"
+            history_lines.append(f"{prefix} {line}")
+
+    # 200자 제한에 맞춰 이력부터 줄임
+    def pack(hist: list[str]) -> str:
+        return "\n".join(header + hist + footer)
+
+    while history_lines and len(pack(history_lines)) > 200:
+        history_lines.pop()
+    body = pack(history_lines)
+    if len(body) > 200:
+        body = body[:197] + "..."
+    return body
 
 
 def _legacy_customs(prev: dict) -> dict:
@@ -307,7 +380,11 @@ async def main() -> int:
             print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
         if domestic.get("found") and _is_meaningful_domestic(domestic):
             parts.append(
-                build_domestic_message(domestic, prev_domestic.get("status", ""))
+                build_domestic_message(
+                    domestic,
+                    prev_domestic.get("status", ""),
+                    prev_events=prev_domestic.get("events") or [],
+                )
             )
     else:
         if customs_changed:
@@ -326,9 +403,13 @@ async def main() -> int:
                 # 미등록/배송준비 스냅샷은 저장만 하고 알림하지 않음
                 print("국내배송 미등록/배송준비 — 카톡 알림 생략")
             else:
-                # 집화 이후 실배송 변화는 FIRST_NOTIFY=0 이어도 알림
+                # 집화 이후 스캔 이력 변화(동일 단계 이동 포함)마다 알림
                 parts.append(
-                    build_domestic_message(domestic, prev_domestic.get("status", ""))
+                    build_domestic_message(
+                        domestic,
+                        prev_domestic.get("status", ""),
+                        prev_events=prev_domestic.get("events") or [],
+                    )
                 )
 
     if parts:
@@ -373,6 +454,8 @@ async def main() -> int:
         "error": domestic.get("error") or "",
         "current_stage_index": domestic.get("current_stage_index", -1),
         "stages": domestic.get("stages") or [],
+        # Pages/카톡용 상세 스캔 이력 (최신 먼저)
+        "events": domestic.get("events") or [],
     }
 
     state[key] = {
