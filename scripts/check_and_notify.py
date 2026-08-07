@@ -9,6 +9,8 @@
   KAKAO_REFRESH_TOKEN
   STATE_PATH (optional, default data/state.json)
   DRY_RUN=1 이면 전송 생략
+
+Note: GitHub Actions cron(*/10)은 실제로는 수십 분~2시간 이상 밀릴 수 있음.
 """
 
 from __future__ import annotations
