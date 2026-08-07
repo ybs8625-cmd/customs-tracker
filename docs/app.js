@@ -132,20 +132,21 @@ function renderDomestic(item, domestic) {
   if (pageSub) pageSub.textContent = "CJ대한통운 스캔 이력입니다.";
   const events = domestic?.events || [];
   const latest = events[0] || {};
+  // 현재단계 = CJ 요약상태(nsDlvNm). 이력 최신 스캔명과 다를 수 있음(예: 간선하차 vs 간선상차).
   const status =
+    domestic?.status ||
     latest.raw_status ||
     latest.stage ||
-    domestic?.status ||
     "배송준비";
   const invoice = domestic?.invoice || item.hbl || "-";
-  const when = formatProcessedAt(latest.processed_at || domestic?.processed_at) || "-";
+  const when = formatProcessedAt(domestic?.processed_at || latest.processed_at) || "-";
   const note = domestic?.error
     ? `<p class="muted note">${escapeHtml(domestic.error)}</p>`
     : "";
   const detailBlock = events.length
     ? renderDomesticEvents(events)
     : `<p class="muted">아직 배송 이력이 없습니다.</p>`;
-  const loc = latest.location || domestic?.location || "-";
+  const loc = domestic?.location || latest.location || "-";
   card.innerHTML = `
     <p class="label">현재 단계</p>
     <h2 class="status">${escapeHtml(status)}</h2>

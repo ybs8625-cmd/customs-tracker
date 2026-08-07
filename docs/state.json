@@ -61,13 +61,29 @@
       ]
     },
     "domestic": {
+      "found": true,
       "invoice": "509799520393",
-      "status": "간선상차",
+      "status": "간선하차",
       "processed_at": "2026-08-07 20:45:09",
       "location": "곤지암Hub",
-      "fingerprint": "509799520393|간선상차|2026-08-07 20:45:09|3|44|간선상차|2026-08-07 20:45:09|곤지암Hub|R1|행낭포장|2026-08-07 16:14:18|인천항만센터|11|집화처리|2026-08-07 16:14:18|[집화]코어물류",
-      "found": true,
-      "error": "",
+      "events": [
+        {
+          "stage": "이동중",
+          "processed_at": "2026-08-07 20:45:09",
+          "location": "곤지암Hub",
+          "status_code": "44",
+          "raw_status": "간선상차",
+          "note": "배송지역으로 상품이 이동중입니다."
+        },
+        {
+          "stage": "집화",
+          "processed_at": "2026-08-07 16:14:18",
+          "location": "[집화]코어물류",
+          "status_code": "11",
+          "raw_status": "집화처리",
+          "note": "보내시는 고객님으로부터 상품을 인수받았습니다"
+        }
+      ],
       "current_stage_index": 3,
       "stages": [
         {
@@ -107,32 +123,9 @@
           "location": ""
         }
       ],
-      "events": [
-        {
-          "stage": "이동중",
-          "processed_at": "2026-08-07 20:45:09",
-          "location": "곤지암Hub",
-          "status_code": "44",
-          "raw_status": "간선상차",
-          "note": "배송지역으로 상품이 이동중입니다."
-        },
-        {
-          "stage": "행낭포장",
-          "processed_at": "2026-08-07 16:14:18",
-          "location": "인천항만센터",
-          "status_code": "R1",
-          "raw_status": "행낭포장",
-          "note": ""
-        },
-        {
-          "stage": "집화",
-          "processed_at": "2026-08-07 16:14:18",
-          "location": "[집화]코어물류",
-          "status_code": "11",
-          "raw_status": "집화처리",
-          "note": "보내시는 고객님으로부터 상품을 인수받았습니다"
-        }
-      ]
+      "error": "",
+      "source": "cj",
+      "fingerprint": "509799520393|간선하차|2026-08-07 20:45:09|2|44|간선상차|2026-08-07 20:45:09|곤지암Hub|11|집화처리|2026-08-07 16:14:18|[집화]코어물류"
     },
     "status": "반출신고",
     "product_name": "X2 MINI GAMING DEVICE",
@@ -189,6 +182,6 @@
         "warehouse": "인천세관 지정장치장(특송물류센터)"
       }
     ],
-    "updated_at": "2026-08-07T12:25:35.750915+00:00"
+    "updated_at": "2026-08-07T12:30:41.561737+00:00"
   }
 }

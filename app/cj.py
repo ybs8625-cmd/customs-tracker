@@ -73,10 +73,6 @@ SCAN_ORDER = {
     "91": 11,
 }
 
-# 상세 resultList에 거의 안 오고 요약 nsDlvNm으로만 오는 코드만 이력에 보강
-# (41 등은 현재상태 코드일 뿐 스캔 행이 아니라서 이력에 넣지 않음)
-SUMMARY_HISTORY_CODES = {"R1"}
-
 STAGE_INDEX = {name: i for i, name in enumerate(STAGE_FLOW)}
 
 
@@ -313,28 +309,29 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
             )
         )
 
-    # 요약 nsDlvNm: R1(행낭포장)처럼 상세에 안 오는 것만 이력 보강.
-    # 41/44 등은 현재상태 코드라서 같은 시각·빈 위치 가짜 행을 만들지 않음.
+    # 요약 nsDlvNm은 "현재 상태"로만 사용. 이력(resultList)에 넣지 않음.
+    # (넣으면 같은 시각·빈 위치의 가짜 간선하차 행이 생겨 3·4번이 이상해 보임)
     summary = summary_rows[0] if summary_rows else {}
     ns_code = _norm_code(str(summary.get("nsDlvNm") or ""))
-    if ns_code in SUMMARY_HISTORY_CODES:
-        already = any(_norm_code(ev.status_code) == ns_code for ev in events)
-        if not already:
-            ns_label = _scan_label(ns_code, "")
-            ns_stage = _map_status(ns_code, ns_label)
-            anchor_time = events[-1].processed_at if events else ""
-            events.append(
-                CjEvent(
-                    stage=ns_stage if ns_stage in STAGE_INDEX else ns_label,
-                    processed_at=anchor_time,
-                    location="",
-                    status_code=ns_code,
-                    raw_status=ns_label,
-                    note="",
-                )
-            )
 
     if not events:
+        # 상세 스캔은 없고 요약 상태만 있는 경우
+        if ns_code:
+            ns_label = _scan_label(ns_code, "")
+            ns_stage = _map_status(ns_code, ns_label)
+            current_idx = STAGE_INDEX.get(ns_stage, 0)
+            return CjTrack(
+                found=True,
+                invoice=str(
+                    detail_map.get("paramInvcNo") or summary.get("invcNo") or inv
+                ),
+                status=ns_label,
+                processed_at="",
+                location="",
+                events=[],
+                current_stage_index=current_idx,
+                stages=_build_stages(current_idx, []),
+            )
         return CjTrack(
             found=True,
             invoice=str(detail_map.get("paramInvcNo") or summary.get("invcNo") or inv),
@@ -361,16 +358,23 @@ async def _fetch_cj_once(inv: str) -> CjTrack:
         (STAGE_INDEX[ev.stage] for ev in events if ev.stage in STAGE_INDEX),
         default=0,
     )
-    # 현재상태 = 이력에 있는 최신 실스캔명 (가짜 요약행과 어긋나지 않게)
-    status = latest.raw_status or latest.stage
+    # 현재상태 = 요약 nsDlvNm(CJ/네이버와 동일). 없으면 최신 실스캔.
+    if ns_code:
+        status = _scan_label(ns_code, "")
+        stage_for_idx = _map_status(ns_code, status)
+    else:
+        status = latest.raw_status or latest.stage
+        stage_for_idx = (
+            latest.stage
+            if latest.stage in STAGE_INDEX
+            else _map_status(latest.status_code, latest.raw_status)
+        )
+    if stage_for_idx in STAGE_INDEX:
+        current_idx = max(current_idx, STAGE_INDEX[stage_for_idx])
+
     status_location = latest.location or (
         events[-2].location if len(events) > 1 else ""
     )
-    stage_for_idx = latest.stage if latest.stage in STAGE_INDEX else _map_status(
-        latest.status_code, latest.raw_status
-    )
-    if stage_for_idx in STAGE_INDEX:
-        current_idx = max(current_idx, STAGE_INDEX[stage_for_idx])
 
     return CjTrack(
         found=True,

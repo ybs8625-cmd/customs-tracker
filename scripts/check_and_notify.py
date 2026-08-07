@@ -104,10 +104,15 @@ def _domestic_event_soft_key(ev: dict) -> tuple[str, str, str]:
 
 
 def _is_phantom_hub_event(ev: dict) -> bool:
-    """요약코드로 만들어진 빈 위치 간선 행(가짜 간선하차 등) 제거."""
+    """요약 nsDlvNm으로만 만들어진 가짜 이력 행 제거 (위치·비고 없음)."""
     code = str(ev.get("status_code") or "").upper()
     loc = str(ev.get("location") or "").strip()
+    note = str(ev.get("note") or "").strip()
+    # 간선/허브 요약코드 + 빈 위치
     if code in {"21", "41", "42", "43", "44"} and not loc:
+        return True
+    # 예전에 요약으로 주입된 행낭포장(R1) — 상세 스캔이 아니면 위치·비고가 비어 있음
+    if code == "R1" and not loc and not note:
         return True
     return False
 
@@ -116,14 +121,29 @@ def merge_domestic_events(
     prev_events: list | None,
     curr_events: list | None,
 ) -> list[dict]:
-    """CJ가 예전 스캔을 빼도 이전 state 이력을 누적 보존 (최신 먼저)."""
+    """CJ 상세 스캔(resultList)만 누적 보존. 요약 nsDlvNm 가짜 행은 제외."""
     from app.cj import SCAN_ORDER, STAGE_INDEX
 
+    curr_list = [ev for ev in list(curr_events or []) if isinstance(ev, dict)]
+    curr_codes = {
+        str(ev.get("status_code") or "").upper()
+        for ev in curr_list
+        if ev.get("status_code")
+    }
+
     merged: dict[tuple[str, str, str], dict] = {}
-    for ev in list(prev_events or []) + list(curr_events or []):
+    for ev in list(prev_events or []) + curr_list:
         if not isinstance(ev, dict):
             continue
         if _is_phantom_hub_event(ev):
+            continue
+        code = str(ev.get("status_code") or "").upper()
+        loc = str(ev.get("location") or "").strip()
+        # 요약으로만 있던 R1 등은 현재 상세에 없으면 이력에서 제거
+        if code == "R1" and code not in curr_codes:
+            continue
+        # 위치가 없는 이전 행은 상세 스캔이 아닐 가능성이 큼 → 현재 상세에 있을 때만
+        if not loc and code not in curr_codes:
             continue
         key = _domestic_event_soft_key(ev)
         if not any(key):
@@ -394,7 +414,7 @@ async def main() -> int:
             "error": domestic.get("error") or prev_domestic.get("error") or "",
         }
     elif domestic.get("found"):
-        # CJ 응답에서 빠진 과거 스캔(행낭포장 등)도 누적 보존
+        # CJ 상세에서 빠진 과거 실스캔만 누적 보존 (요약 nsDlvNm 가짜 행 제외)
         merged_events = merge_domestic_events(
             prev_domestic.get("events") or [],
             domestic.get("events") or [],
