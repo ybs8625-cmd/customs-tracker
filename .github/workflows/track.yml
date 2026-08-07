@@ -43,7 +43,7 @@ jobs:
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
           PUBLIC_PAGE_URL: https://ybs8625-cmd.github.io/customs-tracker/
           FIRST_NOTIFY: "0"
-          FORCE_NOTIFY: "0"
+          FORCE_NOTIFY: "1"
           STATE_PATH: data/state.json
         run: python scripts/check_and_notify.py
 
