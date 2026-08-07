@@ -94,6 +94,61 @@ def customs_fingerprint(cargo: dict) -> str:
     )
 
 
+def _domestic_event_soft_key(ev: dict) -> tuple[str, str, str]:
+    """같은 스캔을 location 유무와 무관하게 묶기 위한 키."""
+    return (
+        str(ev.get("status_code") or "").upper(),
+        str(ev.get("raw_status") or ev.get("stage") or ""),
+        str(ev.get("processed_at") or ""),
+    )
+
+
+def merge_domestic_events(
+    prev_events: list | None,
+    curr_events: list | None,
+) -> list[dict]:
+    """CJ가 예전 스캔을 빼도 이전 state 이력을 누적 보존 (최신 먼저)."""
+    from app.cj import STAGE_INDEX
+
+    merged: dict[tuple[str, str, str], dict] = {}
+    for ev in list(prev_events or []) + list(curr_events or []):
+        if not isinstance(ev, dict):
+            continue
+        key = _domestic_event_soft_key(ev)
+        if not any(key):
+            continue
+        old = merged.get(key)
+        if old is None:
+            merged[key] = {
+                "stage": ev.get("stage") or "",
+                "processed_at": ev.get("processed_at") or "",
+                "location": ev.get("location") or "",
+                "status_code": ev.get("status_code") or "",
+                "raw_status": ev.get("raw_status") or ev.get("stage") or "",
+                "note": ev.get("note") or "",
+            }
+            continue
+        # 더 풍부한 필드 우선
+        if not old.get("location") and ev.get("location"):
+            old["location"] = ev.get("location") or ""
+        if not old.get("note") and ev.get("note"):
+            old["note"] = ev.get("note") or ""
+        if not old.get("raw_status") and ev.get("raw_status"):
+            old["raw_status"] = ev.get("raw_status") or ""
+        if not old.get("stage") and ev.get("stage"):
+            old["stage"] = ev.get("stage") or ""
+        merged[key] = old
+
+    events = list(merged.values())
+    events.sort(
+        key=lambda ev: (
+            str(ev.get("processed_at") or ""),
+            STAGE_INDEX.get(str(ev.get("stage") or ""), -1),
+        )
+    )
+    return list(reversed(events))
+
+
 def domestic_fingerprint(track: dict) -> str:
     """모든 스캔 이벤트를 포함해 중간 이동(동일 단계)도 변경으로 감지."""
     events = track.get("events") or []
@@ -326,6 +381,18 @@ async def main() -> int:
             **prev_domestic,
             "error": domestic.get("error") or prev_domestic.get("error") or "",
         }
+    elif domestic.get("found"):
+        # CJ 응답에서 빠진 과거 스캔(행낭포장 등)도 누적 보존
+        merged_events = merge_domestic_events(
+            prev_domestic.get("events") or [],
+            domestic.get("events") or [],
+        )
+        if len(merged_events) != len(domestic.get("events") or []):
+            print(
+                f"국내배송 이력 병합: cj={len(domestic.get('events') or [])} "
+                f"-> merged={len(merged_events)}"
+            )
+        domestic = {**domestic, "events": merged_events}
 
     curr_customs_fp = customs_fingerprint(cargo) if customs_ok else ""
     curr_domestic_fp = domestic_fingerprint(domestic)
