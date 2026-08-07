@@ -211,6 +211,7 @@ async def main() -> int:
     cj_invoice = (os.getenv("TRACK_CJ_INVOICE") or hbl).strip()
     dry_run = os.getenv("DRY_RUN", "").strip() in {"1", "true", "TRUE", "yes"}
     notify_first = os.getenv("FIRST_NOTIFY", "1").strip() not in {"0", "false", "FALSE"}
+    force_notify = os.getenv("FORCE_NOTIFY", "").strip() in {"1", "true", "TRUE", "yes"}
 
     cargo_obj = await fetch_cargo(hbl=hbl, year=year)
     cargo = cargo_obj.to_dict()
@@ -291,30 +292,44 @@ async def main() -> int:
                 "domestic_error": domestic.get("error") or "",
                 "clearance_done": clearance_done,
                 "suppress_customs_notify": suppress_customs_notify,
+                "force_notify": force_notify,
             },
             ensure_ascii=False,
         )
     )
 
     parts: list[str] = []
-    if customs_changed:
-        first = not prev_customs_fp
-        if suppress_customs_notify:
-            print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
-        elif first and not notify_first:
-            print("통관 첫 스냅샷만 저장 (알림 생략)")
-        else:
+    if force_notify:
+        print("FORCE_NOTIFY=1 — 현재 상태 기준으로 알림 전송")
+        if customs_ok and not suppress_customs_notify:
             parts.append(build_customs_message(cargo, prev_customs.get("status", "")))
-
-    if domestic_changed and domestic.get("found"):
-        if not _is_meaningful_domestic(domestic):
-            # 미등록/배송준비 스냅샷은 저장만 하고 알림하지 않음
-            print("국내배송 미등록/배송준비 — 카톡 알림 생략")
-        else:
-            # 집화 이후 실배송 변화는 FIRST_NOTIFY=0 이어도 알림
+        elif customs_ok and suppress_customs_notify:
+            print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
+        if domestic.get("found") and _is_meaningful_domestic(domestic):
             parts.append(
                 build_domestic_message(domestic, prev_domestic.get("status", ""))
             )
+    else:
+        if customs_changed:
+            first = not prev_customs_fp
+            if suppress_customs_notify:
+                print("통관 완료·국내배송 단계 — 통관 카톡 알림 생략")
+            elif first and not notify_first:
+                print("통관 첫 스냅샷만 저장 (알림 생략)")
+            else:
+                parts.append(
+                    build_customs_message(cargo, prev_customs.get("status", ""))
+                )
+
+        if domestic_changed and domestic.get("found"):
+            if not _is_meaningful_domestic(domestic):
+                # 미등록/배송준비 스냅샷은 저장만 하고 알림하지 않음
+                print("국내배송 미등록/배송준비 — 카톡 알림 생략")
+            else:
+                # 집화 이후 실배송 변화는 FIRST_NOTIFY=0 이어도 알림
+                parts.append(
+                    build_domestic_message(domestic, prev_domestic.get("status", ""))
+                )
 
     if parts:
         try:
@@ -322,6 +337,8 @@ async def main() -> int:
         except KakaoError as exc:
             print(f"카톡 전송 실패: {exc}", file=sys.stderr)
             return 3
+    elif force_notify:
+        print("FORCE_NOTIFY 이지만 보낼 알림이 없습니다.")
     elif not customs_changed and not domestic_changed:
         print("변경 없음")
 
