@@ -4,10 +4,10 @@
     "year": 2026,
     "clearance_done": true,
     "customs": {
-      "status": "통관목록심사완료",
+      "status": "반출신고",
       "product_name": "X2 MINI GAMING DEVICE",
       "processed_at": "20260807160837",
-      "fingerprint": "통관목록심사완료|20260807160837|26WDFCF289I09041013|통관목록심사완료|20260807160837",
+      "fingerprint": "반출신고|20260807160837|26WDFCF289I09041013|반출신고|20260807160837|통관목록심사완료|20260807160837|반입신고|20260807160833",
       "current_stage_index": 7,
       "stages": [
         {
@@ -41,22 +41,22 @@
           "warehouse": "인천세관 지정장치장(특송물류센터)"
         },
         {
-          "name": "수입신고",
+          "name": "통관특례·수입신고",
           "state": "done",
           "processed_at": "",
           "warehouse": ""
         },
         {
-          "name": "수입신고수리",
+          "name": "반입신고",
           "state": "done",
-          "processed_at": "",
-          "warehouse": ""
+          "processed_at": "20260807160833",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
         },
         {
-          "name": "물품반출",
+          "name": "반출신고",
           "state": "current",
-          "processed_at": "",
-          "warehouse": ""
+          "processed_at": "20260807160837",
+          "warehouse": "인천세관 지정장치장(특송물류센터)"
         }
       ]
     },
@@ -102,10 +102,10 @@
         }
       ]
     },
-    "status": "통관목록심사완료",
+    "status": "반출신고",
     "product_name": "X2 MINI GAMING DEVICE",
     "processed_at": "20260807160837",
-    "fingerprint": "통관목록심사완료|20260807160837|26WDFCF289I09041013|통관목록심사완료|20260807160837",
+    "fingerprint": "반출신고|20260807160837|26WDFCF289I09041013|반출신고|20260807160837|통관목록심사완료|20260807160837|반입신고|20260807160833",
     "current_stage_index": 7,
     "stages": [
       {
@@ -139,24 +139,24 @@
         "warehouse": "인천세관 지정장치장(특송물류센터)"
       },
       {
-        "name": "수입신고",
+        "name": "통관특례·수입신고",
         "state": "done",
         "processed_at": "",
         "warehouse": ""
       },
       {
-        "name": "수입신고수리",
+        "name": "반입신고",
         "state": "done",
-        "processed_at": "",
-        "warehouse": ""
+        "processed_at": "20260807160833",
+        "warehouse": "인천세관 지정장치장(특송물류센터)"
       },
       {
-        "name": "물품반출",
+        "name": "반출신고",
         "state": "current",
-        "processed_at": "",
-        "warehouse": ""
+        "processed_at": "20260807160837",
+        "warehouse": "인천세관 지정장치장(특송물류센터)"
       }
     ],
-    "updated_at": "2026-08-07T09:43:56.140407+00:00"
+    "updated_at": "2026-08-07T09:47:15.868719+00:00"
   }
 }
