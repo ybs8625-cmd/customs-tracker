@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
@@ -15,6 +16,8 @@ UNIPASS_URL = (
     "https://unipass.customs.go.kr:38010/ext/rest/"
     "cargCsclPrgsInfoQry/retrieveCargCsclPrgsInfo"
 )
+_MAX_ATTEMPTS = 3
+_RETRY_DELAYS_SEC = (1.0, 2.0)
 
 # 특송·일반 공통 진행 단계 (표시용)
 STAGE_FLOW = [
@@ -292,13 +295,51 @@ async def fetch_cargo(hbl: str, year: int | None = None, api_key: str | None = N
     params = {"crkyCn": api_key, "hblNo": hbl, "blYy": str(year)}
     url = f"{UNIPASS_URL}?{urlencode(params)}"
 
-    try:
-        async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
-            resp = await client.get(url, headers={"Accept": "application/xml"})
-            resp.raise_for_status()
-            text = resp.text
-    except httpx.HTTPError as exc:
-        return CargoTrack(found=False, hbl=hbl, year=year, error=f"유니패스 연결 실패: {exc}")
+    text = ""
+    last_error = ""
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=20.0, verify=True) as client:
+                resp = await client.get(url, headers={"Accept": "application/xml"})
+                resp.raise_for_status()
+                text = resp.text
+            break
+        except httpx.HTTPError as exc:
+            detail = str(exc).strip() or type(exc).__name__
+            cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+            if cause is not None:
+                cause_text = str(cause).strip() or type(cause).__name__
+                detail = f"{detail} (cause={cause_text})"
+            last_error = f"유니패스 연결 실패: {detail}"
+            transient = isinstance(
+                exc,
+                (
+                    httpx.ConnectError,
+                    httpx.ConnectTimeout,
+                    httpx.ReadTimeout,
+                    httpx.WriteTimeout,
+                    httpx.PoolTimeout,
+                    httpx.RemoteProtocolError,
+                    httpx.ReadError,
+                    httpx.WriteError,
+                ),
+            ) or (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code in {408, 425, 429, 500, 502, 503, 504}
+            )
+            if attempt < _MAX_ATTEMPTS and transient:
+                await asyncio.sleep(
+                    _RETRY_DELAYS_SEC[min(attempt - 1, len(_RETRY_DELAYS_SEC) - 1)]
+                )
+                continue
+            return CargoTrack(found=False, hbl=hbl, year=year, error=last_error)
+    else:
+        return CargoTrack(
+            found=False,
+            hbl=hbl,
+            year=year,
+            error=last_error or "유니패스 연결 실패",
+        )
 
     track = parse_unipass_xml(text, hbl=hbl, year=year)
 
